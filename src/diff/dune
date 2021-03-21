@@ -1,0 +1,5 @@
+(library
+ (name scrutiny_diff)
+ (public_name scrutiny.diff)
+ (synopsis "Basic display structural diffs.")
+ (libraries fmt))

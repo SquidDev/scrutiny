@@ -1,0 +1,6 @@
+(lang dune 2.0)
+(profile release)
+
+(env
+ (release
+  (ocamlopt_flags :standard -ccopt -static)))

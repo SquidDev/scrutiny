@@ -1,0 +1,5 @@
+(executable
+ (name systemd_exporter)
+ (public_name systemd_exporter)
+ (libraries cmdliner containers fpath httpaf httpaf-lwt-unix fmt lwt lwt.unix
+   logs obus prometheus scrutiny.prometheus.httpaf scrutiny.systemd))

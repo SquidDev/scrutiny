@@ -1,0 +1,20 @@
+(executable
+ (name cloudflare)
+ (modules cloudflare)
+ (libraries logs logs.fmt lwt lwt.unix fmt.tty scrutiny.cloudflare
+   scrutiny.diff))
+
+(executable
+ (name journal_tail)
+ (modules journal_tail)
+ (libraries scrutiny.systemd))
+
+(executable
+ (name journal_write)
+ (modules journal_write)
+ (libraries scrutiny.systemd))
+
+(executable
+ (name list_units)
+ (modules list_units)
+ (libraries scrutiny.systemd lwt lwt.unix obus obus.internals containers))

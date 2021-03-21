@@ -1,0 +1,13 @@
+(library
+ (name scrutiny_prometheus)
+ (public_name scrutiny.prometheus)
+ (synopsis "prometheus-app without the cohttp dependency")
+ (modules scrutiny_prometheus)
+ (libraries prometheus fmt unix re))
+
+(library
+ (name scrutiny_prometheus_httpaf)
+ (public_name scrutiny.prometheus.httpaf)
+ (synopsis "http/af handler for prometheus")
+ (modules scrutiny_prometheus_httpaf)
+ (libraries httpaf prometheus scrutiny.prometheus))

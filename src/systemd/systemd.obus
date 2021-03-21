@@ -1,0 +1,10 @@
+interface org.freedesktop.systemd1.Manager {
+  method ListUnits : () -> (units : (string * string * string * string * string * string * object_path * uint32 * string * object_path) array)
+}
+
+interface org.freedesktop.systemd1.Service {
+  property_r ControlGroup : string
+    with {
+      org.freedesktop.DBus.Property.EmitsChangedSignal = "false"
+    }
+}

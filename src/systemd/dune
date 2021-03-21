@@ -1,0 +1,59 @@
+(library
+ (name scrutiny_systemd)
+ (public_name scrutiny.systemd)
+ (synopsis "Utilities for interacting with systemd and journald.")
+ (ocamlopt_flags :standard -cclib -lsystemd)
+ (libraries ctypes integers scrutiny.errno obus obus.internals lwt react)
+ (preprocess
+  (pps lwt_ppx))
+ (modules
+  (:standard \ ffi_bindings ffi_generate))
+ (foreign_stubs
+  (language c)
+  (names ffi_generated)
+  (flags :standard -Wno-incompatible-pointer-types)))
+
+(library
+ (name scrutiny_systemd_bindings)
+ (libraries ctypes)
+ (wrapped false)
+ (modules ffi_bindings))
+
+(executable
+ (name ffi_generate)
+ (libraries ctypes ctypes.stubs scrutiny_systemd_bindings containers)
+ (modules ffi_generate))
+
+(rule
+ (targets ffi_generated_types.write.c ffi_generated.ml ffi_generated.c)
+ (action
+  (run ./ffi_generate.exe)))
+
+(rule
+ (deps ffi_generated_types.write.c)
+ (target ffi_generated_types.write.exe)
+ (action
+  (run %{cc} %{read-lines:../c_config/config.txt} -I%{ocaml_where} -o
+    %{target} %{deps})))
+
+(rule
+ (action
+  (with-stdout-to
+   ffi_generated_types.ml
+   (run ./ffi_generated_types.write.exe))))
+
+(rule
+ (action
+  (copy ffi_bindings.ml systemd_bindings.ml)))
+
+(rule
+ (deps systemd.obus)
+ (targets systemd_interfaces.ml systemd_interfaces.mli)
+ (action
+  (run obus-gen-interface -keep-common -o systemd_interfaces %{deps})))
+
+(rule
+ (deps systemd.obus)
+ (targets systemd_client.ml systemd_client.mli)
+ (action
+  (run obus-gen-client %{deps})))
