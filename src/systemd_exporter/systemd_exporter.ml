@@ -35,14 +35,14 @@ let error_handler (_ : Unix.sockaddr) ?request:_ error start_response =
       Body.write_string response_body (Status.default_reason_phrase error));
   Body.close_writer response_body
 
-let main ~busses ~cgroup ~port =
+let main ~busses ~cgroup ~addr ~port =
   let catching ~tag f =
     Lwt.catch f (fun e ->
         let bt = Printexc.get_raw_backtrace () in
         Log.err (fun f -> f "Error in %s: %a" tag Fmt.exn_backtrace (e, bt));
         Printexc.raise_with_backtrace e bt)
   in
-  let listen_address = Unix.(ADDR_INET (inet_addr_loopback, port)) in
+  let listen_address = Unix.(ADDR_INET (inet_addr_of_string addr, port)) in
   let* busses =
     match busses with
     | [] ->
@@ -66,7 +66,7 @@ let main ~busses ~cgroup ~port =
     Lwt_io.establish_server_with_client_socket listen_address
       (Server.create_connection_handler ~request_handler:(request_handler config) ~error_handler)
   in
-  Log.info (fun f -> f "Listening on port %i" port);
+  Log.info (fun f -> f "Listening on %s:%d" addr port);
   let forever, _ = Lwt.wait () in
   forever
 
@@ -77,8 +77,11 @@ let () =
     let ( and$ ) x y = Cmdliner.Term.(const (fun x y -> (x, y)) $ x $ y) in
 
     let$ verbose = value & flag & info ~doc:"Show all logging messages." [ "verbose" ]
-    and$ port = value & opt int 8080 & info ~doc:"Port to expose /metrics on" [ "p"; "port" ]
-    and$ cgroup = value & opt dir "/sys/fs/cgroup/" & info ~doc:"CGroup root" [ "C"; "cgroup-root" ]
+    and$ port = value & opt int 8080 & info ~doc:"Port to expose /metrics on." [ "p"; "port" ]
+    and$ addr =
+      value & opt string "127.0.0.1" & info ~doc:"Address to expose /metrics on." [ "a"; "addr" ]
+    and$ cgroup =
+      value & opt dir "/sys/fs/cgroup/" & info ~doc:"CGroup root." [ "C"; "cgroup-root" ]
     and$ busses = value & opt_all string [] & info ~doc:"DBus busses to listen to." [ "bus" ] in
 
     Printexc.record_backtrace true;
@@ -89,7 +92,7 @@ let () =
       Logs.Src.list ()
       |> List.iter (fun src ->
              if Logs.Src.name src = "scrutiny.cgroups" then Logs.Src.set_level src (Some Logs.Error));
-    Lwt_main.run (main ~busses ~cgroup ~port)
+    Lwt_main.run (main ~busses ~cgroup ~addr ~port)
   in
 
   let info = Cmdliner.Term.info Sys.executable_name in
