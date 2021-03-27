@@ -67,7 +67,7 @@ let find_field ~field contents =
   in
   go 0
 
-let get_memory cgroup t =
+let get_memory_current cgroup t =
   let stat =
     match t.kind with
     | Unified -> "memory.usage_in_bytes"
@@ -75,6 +75,14 @@ let get_memory cgroup t =
   in
   use ~subsystem:"memory" ~stat cgroup t @@ fun x ->
   match String.trim x |> int_of_string_opt with
+  | None ->
+      Log.warn (fun f -> f "Error parsing memory usage for %a (contents is %S)" Fpath.pp cgroup x);
+      None
+  | Some _ as x -> x
+
+let get_memory_anon cgroup t =
+  use ~subsystem:"unified" ~stat:"memory.stat" cgroup t @@ fun x ->
+  match find_field ~field:"anon" x |> CCOpt.flat_map int_of_string_opt with
   | None ->
       Log.warn (fun f -> f "Error parsing memory usage for %a (contents is %S)" Fpath.pp cgroup x);
       None

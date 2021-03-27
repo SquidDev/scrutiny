@@ -34,7 +34,8 @@ end
 type unit_state =
   { mutable active : bool;
     mutable state : State.t;
-    mutable memory : float option;
+    mutable memory_current : float option;
+    mutable memory_anon : float option;
     mutable cpu : float option
   }
 
@@ -44,7 +45,9 @@ let get_unit name =
   match SMap.find_opt name !units with
   | Some x -> x
   | None ->
-      let state = { active = false; state = Inactive; memory = None; cpu = None } in
+      let state =
+        { active = false; state = Inactive; memory_current = None; memory_anon = None; cpu = None }
+      in
       units := SMap.add name state !units;
       state
 
@@ -77,7 +80,11 @@ module Metrics = struct
 
   let unit_current_memory : t =
     unit_metric ~help:"Current memory used by this unit" "systemd_unit_current_memory" (fun x ->
-        x.memory)
+        x.memory_current)
+
+  let unit_anon_memory : t =
+    unit_metric ~help:"Current anonymous (i.e. non-mmaped) memory used by this unit."
+      "systemd_unit_anon_memory" (fun x -> x.memory_anon)
 
   let unit_cpu_usage_nsec : t =
     unit_metric ~help:"Total CPU usage (us)" "systemd_unit_cpu_usage_usec" (fun x -> x.cpu)
@@ -107,7 +114,7 @@ module Metrics = struct
     in
     (info, collect)
 
-  let all = [ unit_current_memory; unit_cpu_usage_nsec; unit_state ]
+  let all = [ unit_current_memory; unit_anon_memory; unit_cpu_usage_nsec; unit_state ]
 end
 
 let () =
@@ -138,13 +145,16 @@ let collect t =
         if String.length cgroup > 0 && cgroup.[0] = '/' then CCString.drop 1 cgroup else cgroup
       in
       let cgroup = Fpath.v cgroup in
-      let* memory = Cgroups.get_memory cgroup t.cgroups
+      let* memory_current = Cgroups.get_memory_current cgroup t.cgroups
+      and* memory_anon = Cgroups.get_memory_anon cgroup t.cgroups
       and* cpu = Cgroups.get_cpu cgroup t.cgroups in
-      unit_state.memory <- Option.map float_of_int memory;
+      unit_state.memory_current <- Option.map float_of_int memory_current;
+      unit_state.memory_anon <- Option.map float_of_int memory_anon;
       unit_state.cpu <- Option.map (fun x -> float_of_int x) cpu;
       Lwt.return_unit)
     else (
-      unit_state.memory <- None;
+      unit_state.memory_current <- None;
+      unit_state.memory_anon <- None;
       unit_state.cpu <- None;
       Lwt.return_unit)
 
