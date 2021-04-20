@@ -9,15 +9,18 @@ type t =
     content : string;
     proxied : bool;
     ttl : int;
-    priority : int option
+    priority : int option;
+    data : Yojson.Safe.t option
   }
 
-let pp fmt r = Format.fprintf fmt "%5s %s=%S" r.type_ r.name r.content
+let pp_json fmt = function
+  | None -> ()
+  | Some x -> Format.fprintf fmt " %s" (Yojson.Safe.to_string x)
 
-(* TODO: Value*)
+let pp fmt r = Format.fprintf fmt "%5s %s=%S%a" r.type_ r.name r.content pp_json r.data
 
-let mk ?priority ?(proxied = false) ~ttl ~name type_ content =
-  { type_; name; content; proxied; ttl; priority }
+let mk ?priority ?(proxied = false) ~ttl ~name ?data type_ content =
+  { type_; name; content; proxied; ttl; priority; data }
 
 let txt ?(ttl = 1) ~name content = mk ~ttl ~name "TXT" content
 
@@ -28,6 +31,10 @@ let aaaa ?(ttl = 1) ?(proxied = false) ~name content = mk ~ttl ~proxied ~name "A
 let cname ?(ttl = 1) ?(proxied = false) ~name content = mk ~ttl ~proxied ~name "CNAME" content
 
 let mx ?(ttl = 1) ?(priority = 10) ~name content = mk ~ttl ~name ~priority "MX" content
+
+let caa ?(ttl = 1) ~name content =
+  let data = `Assoc [ ("flags", `Int 0); ("tag", `String "issue"); ("value", `String content) ] in
+  Printf.sprintf "0 issue %S" content |> mk ~ttl ~name ~data "CAA"
 
 module Updates = struct
   let delete ~dryrun ~auth ~zone record =
@@ -64,7 +71,7 @@ module Updates = struct
     if dryrun then Lwt.return (true, diff ())
     else
       Api_dns_record.add ~auth ~zone ~type_:spec.type_ ~name:spec.name ~content:spec.content
-        ~proxied:spec.proxied ~ttl:spec.ttl ?priority:spec.priority ()
+        ~proxied:spec.proxied ~ttl:spec.ttl ?priority:spec.priority ?data:spec.data ()
       >|= function
       | Some record ->
           Log.info (fun f -> f "Created record %a as %s" pp spec record.id);
@@ -114,7 +121,9 @@ module Sync = struct
       SMap.merge
         (fun _ l r ->
           match (l, r) with
-          | Some l, Some [ r ] when l.priority = r.Api_dns_record.priority -> Some (l, r)
+          | Some l, Some [ r ]
+            when l.priority = r.Api_dns_record.priority && l.data = r.Api_dns_record.data ->
+              Some (l, r)
           | _ -> None)
         spec records
     in

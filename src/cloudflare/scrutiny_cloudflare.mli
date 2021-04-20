@@ -56,6 +56,7 @@ module DnsRecord : sig
     ?proxied:bool ->
     ?ttl:int ->
     ?priority:int ->
+    ?data:Yojson.Safe.t ->
     unit ->
     t option Lwt.t
 
@@ -95,6 +96,9 @@ module DnsRecord : sig
 
     (** An MX record with an optional priority. *)
     val mx : ?ttl:int -> ?priority:int -> name:string -> string -> t
+
+    (** A CAA record. *)
+    val caa : ?ttl:int -> name:string -> string -> t
 
     (** Compare the current list of DNS records in a zone with a desired/expected list. Returns the
         modified record, as a well as a result marking success. *)

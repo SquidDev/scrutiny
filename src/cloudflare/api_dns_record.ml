@@ -20,7 +20,11 @@ type t =
   }
 [@@deriving yojson] [@@yojson.allow_extra_fields]
 
-let pp_short fmt r = Format.fprintf fmt "%5s %s=%S" r.type_ r.name r.content
+let pp_json fmt = function
+  | None -> ()
+  | Some x -> Format.fprintf fmt " %s" (Yojson.Safe.to_string x)
+
+let pp_short fmt r = Format.fprintf fmt "%5s %s=%S%a" r.type_ r.name r.content pp_json r.data
 
 let pp fmt r = Format.fprintf fmt "{%s} %a" r.id pp_short r
 
@@ -43,10 +47,11 @@ let body_common ~type_ ~name ~content ?proxied ?(ttl = 1) () : (string * Yojson.
   ]
   |> add_opt "proxied" (Option.map (fun x -> `Bool x) proxied)
 
-let add ~auth ~zone ~type_ ~name ~content ?proxied ?ttl ?priority () =
+let add ~auth ~zone ~type_ ~name ~content ?proxied ?ttl ?priority ?data () =
   let body =
     body_common ~type_ ~name ~content ?proxied ?ttl ()
     |> add_opt "priority" (Option.map (fun x -> `Int x) priority)
+    |> add_opt "data" data
   in
   Request.call ~auth
     ~body:(Yojson.Safe.to_string (`Assoc body))
