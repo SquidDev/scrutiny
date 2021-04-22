@@ -27,13 +27,14 @@
     cmdliner
     (containers (>= 3.0.1))
     ctypes
+    fmt
     fpath
     httpaf
     httpaf-lwt-unix
-    fmt
     logs
     lwt
     obus
+    ppx_yojson_conv
     prometheus
     re
     ))
