@@ -25,16 +25,26 @@
 
     ; Core
     cmdliner
+    cohttp
+    cohttp-lwt
+    cohttp-lwt-unix
     (containers (>= 3.0.1))
     ctypes
     fmt
     fpath
     httpaf
     httpaf-lwt-unix
+    integers
     logs
     lwt
+    lwt_ppx
     obus
     ppx_yojson_conv
+    ppx_yojson_conv_lib
     prometheus
     re
+    react
+    tls
+    uri
+    yojson
     ))
