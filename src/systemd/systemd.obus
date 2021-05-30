@@ -3,7 +3,11 @@ interface org.freedesktop.systemd1.Manager {
 
   method ListUnits : () -> (units : (string * string * string * string * string * string * object_path * uint32 * string * object_path) array)
   method LoadUnit : (name : string) -> (unit : object_path)
+
   method Reload : () -> ()
+
+  method EnableUnitFiles : (files : string array, runtime : boolean, force : boolean) -> (carries_install_info : boolean, changes : (string * string * string) array)
+  method DisableUnitFiles : (files : string array, runtime : boolean) -> (changes : (string * string * string) array)
 
   signal JobRemoved : (id : uint32, job : object_path, unit : string, result : string)
 }
@@ -26,6 +30,8 @@ interface org.freedesktop.systemd1.Unit {
       org.freedesktop.DBus.Property.EmitsChangedSignal = "false"
     }
 
+  method Start : (mode : string) -> (job : object_path)
+  method Stop : (mode : string) -> (job : object_path)
   method Reload : (mode : string) -> (job : object_path)
   method Restart : (mode : string) -> (job : object_path)
 }

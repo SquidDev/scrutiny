@@ -4,7 +4,7 @@
  (synopsis "Utilities for interacting with systemd and journald.")
  (ocamlopt_flags :standard -cclib -lsystemd)
  (libraries ctypes integers scrutiny.errno obus obus.internals lwt lwt.unix
-   react)
+   result react)
  (preprocess
   (pps lwt_ppx))
  (modules

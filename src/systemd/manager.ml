@@ -11,17 +11,90 @@ type unit_file =
   }
 
 module Unit = struct
+  module SMap = Map.Make (String)
+
+  type job_progress =
+    | WaitingFor of (string * string Lwt.u)
+    | IsDone of string SMap.t
+
   type t = unit_file
 
   let id x = x.u_id
 
-  let reload x =
-    let%lwt _job = Systemd_client.Org_freedesktop_systemd1_Unit.reload x.u_proxy ~mode:"replace" in
+  (** Sets up a job listener, runs a function which creates a job (for instance restarting a
+      service) and then waits for that job to finish, returning the job's result. *)
+  let watching_job fn x =
+    let manager = x.u_manager in
+    let%lwt () =
+      if manager.m_listening then Lwt.return_unit
+      else Systemd_client.Org_freedesktop_systemd1_Manager.subscribe manager.m_proxy
+    in
+    Lwt_switch.with_switch @@ fun switch ->
+    let cell = ref (IsDone SMap.empty) in
+
+    let%lwt event =
+      Systemd_client.Org_freedesktop_systemd1_Manager.job_removed manager.m_proxy
+      |> OBus_signal.connect ~switch
+    in
+    let watcher =
+      event
+      |> React.E.map @@ fun (_, path, _, result) ->
+         let path = OBus_proxy.path path |> OBus_path.to_string in
+         match !cell with
+         | IsDone are_done -> cell := IsDone (SMap.add path result are_done)
+         | WaitingFor (needs, finished) -> if needs = path then Lwt.wakeup_later finished result
+    in
+
+    let%lwt job = fn x in
+    let job = OBus_proxy.path job |> OBus_path.to_string in
+    let%lwt result =
+      match !cell with
+      | WaitingFor _ -> failwith "Impossible."
+      | IsDone are_done -> (
+        match SMap.find_opt job are_done with
+        | Some result -> Lwt.return result
+        | None ->
+            let wait, signal = Lwt.wait () in
+            cell := WaitingFor (job, signal);
+            wait)
+    in
+
+    (* While this may not be needed, it means we ensure watcher remains in scope. *)
+    React.E.stop watcher;
+    match result with
+    | "done" -> Lwt.return_ok ()
+    | result -> Lwt.return_error result
+
+  let start =
+    watching_job (fun x ->
+        Systemd_client.Org_freedesktop_systemd1_Unit.start x.u_proxy ~mode:"replace")
+
+  let stop =
+    watching_job (fun x ->
+        Systemd_client.Org_freedesktop_systemd1_Unit.stop x.u_proxy ~mode:"replace")
+
+  let reload =
+    watching_job (fun x ->
+        Systemd_client.Org_freedesktop_systemd1_Unit.reload x.u_proxy ~mode:"replace")
+
+  let restart =
+    watching_job (fun x ->
+        Systemd_client.Org_freedesktop_systemd1_Unit.restart x.u_proxy ~mode:"replace")
+
+  let enable x =
+    (* TODO: Do some sanity checks here! *)
+    let%lwt _ =
+      Systemd_client.Org_freedesktop_systemd1_Manager.enable_unit_files x.u_manager.m_proxy
+        ~files:[ x.u_id ] ~runtime:false ~force:false
+    in
     Lwt.return_unit
 
-  let restart x =
-    let%lwt _job = Systemd_client.Org_freedesktop_systemd1_Unit.restart x.u_proxy ~mode:"replace" in
-    Lwt.return_true
+  let disable x =
+    let%lwt _ =
+      Systemd_client.Org_freedesktop_systemd1_Manager.disable_unit_files x.u_manager.m_proxy
+        ~files:[ x.u_id ] ~runtime:false
+    in
+    Lwt.return_unit
 
   let load_state x =
     Systemd_client.Org_freedesktop_systemd1_Unit.load_state x.u_proxy |> OBus_property.get

@@ -11,11 +11,23 @@ module Unit : sig
   (** Get the identifier for this unit. *)
   val id : t -> string
 
-  (** Attempt to reload this unit. *)
-  val reload : t -> unit Lwt.t
+  (** Attempt to start this unit. *)
+  val start : t -> (unit, string) result Lwt.t
 
-  (** Attempt to restart this unit, returning whether it was successful or not. *)
-  val restart : t -> bool Lwt.t
+  (** Attempt to stop this unit. *)
+  val stop : t -> (unit, string) result Lwt.t
+
+  (** Attempt to reload this unit. *)
+  val reload : t -> (unit, string) result Lwt.t
+
+  (** Attempt to restart this unit. *)
+  val restart : t -> (unit, string) result Lwt.t
+
+  (** Attempt to reload this unit. *)
+  val enable : t -> unit Lwt.t
+
+  (** Attempt to restart this unit. *)
+  val disable : t -> unit Lwt.t
 
   (** Get whether the current configuration file has been loaded. *)
   val load_state : t -> string Lwt.t
