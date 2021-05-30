@@ -38,7 +38,6 @@
     logs
     lwt
     lwt_ppx
-    obus
     ppx_yojson_conv
     ppx_yojson_conv_lib
     prometheus
@@ -47,4 +46,11 @@
     tls
     uri
     yojson
+
+    ; vendor/obus
+    lwt_log
+    lwt_react
+    menhir
+    ppxlib
+    xmlm
     ))

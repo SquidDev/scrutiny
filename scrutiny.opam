@@ -28,7 +28,6 @@ depends: [
   "logs"
   "lwt"
   "lwt_ppx"
-  "obus"
   "ppx_yojson_conv"
   "ppx_yojson_conv_lib"
   "prometheus"
@@ -37,6 +36,11 @@ depends: [
   "tls"
   "uri"
   "yojson"
+  "lwt_log"
+  "lwt_react"
+  "menhir"
+  "ppxlib"
+  "xmlm"
   "odoc" {with-doc}
 ]
 build: [

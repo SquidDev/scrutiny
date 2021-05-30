@@ -73,6 +73,10 @@ module Values (F : Cstubs.FOREIGN) = struct
 
     let sd_journal_wait = foreign "sd_journal_wait" (sd_journal @-> uint64_t @-> returning int)
 
+    let sd_journal_get_fd = foreign "sd_journal_get_fd" (sd_journal @-> returning int)
+
+    let sd_journal_process = foreign "sd_journal_process" (sd_journal @-> returning int)
+
     let sd_journal_sendv = foreign "sd_journal_sendv" (ptr iovec @-> int @-> returning int)
 
     let sd_journal_get_data =

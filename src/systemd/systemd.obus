@@ -1,5 +1,11 @@
 interface org.freedesktop.systemd1.Manager {
+  method Subscribe : () -> ()
+
   method ListUnits : () -> (units : (string * string * string * string * string * string * object_path * uint32 * string * object_path) array)
+  method LoadUnit : (name : string) -> (unit : object_path)
+  method Reload : () -> ()
+
+  signal JobRemoved : (id : uint32, job : object_path, unit : string, result : string)
 }
 
 interface org.freedesktop.systemd1.Service {
@@ -7,4 +13,19 @@ interface org.freedesktop.systemd1.Service {
     with {
       org.freedesktop.DBus.Property.EmitsChangedSignal = "false"
     }
+}
+
+interface org.freedesktop.systemd1.Unit {
+  property_r ActiveState : string
+  property_r LoadState : string
+    with {
+      org.freedesktop.DBus.Property.EmitsChangedSignal = "const"
+    }
+  property_r UnitFileState : string
+    with {
+      org.freedesktop.DBus.Property.EmitsChangedSignal = "false"
+    }
+
+  method Reload : (mode : string) -> (job : object_path)
+  method Restart : (mode : string) -> (job : object_path)
 }

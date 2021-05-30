@@ -3,7 +3,8 @@
  (public_name scrutiny.systemd)
  (synopsis "Utilities for interacting with systemd and journald.")
  (ocamlopt_flags :standard -cclib -lsystemd)
- (libraries ctypes integers scrutiny.errno obus obus.internals lwt react)
+ (libraries ctypes integers scrutiny.errno obus obus.internals lwt lwt.unix
+   react)
  (preprocess
   (pps lwt_ppx))
  (modules

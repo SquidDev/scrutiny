@@ -1,6 +1,6 @@
 open Lwt.Syntax
 module SMap = Map.Make (String)
-module Units = Scrutiny_systemd.Units
+module Manager = Scrutiny_systemd.Manager
 
 module State = struct
   type t =
@@ -131,7 +131,7 @@ let collect t =
 
   (* For all busses and all units. *)
   Fun.flip Lwt_list.iter_p t.busses @@ fun bus ->
-  let* units = Units.list_units bus in
+  let* units = Manager.of_bus bus |> Manager.list_units in
   Fun.flip Lwt_list.iter_p units @@ fun unit_info ->
   if not (CCString.suffix ~suf:".service" unit_info.id) then Lwt.return_unit
   else
@@ -139,7 +139,7 @@ let collect t =
     unit_state.active <- true;
     unit_state.state <- State.v unit_info.active_state;
 
-    let* cgroup = Units.Service.control_group unit_info in
+    let* cgroup = Manager.Service.of_unit unit_info.unit_path |> Manager.Service.control_group in
     if cgroup <> "" then (
       let cgroup =
         if String.length cgroup > 0 && cgroup.[0] = '/' then CCString.drop 1 cgroup else cgroup
