@@ -1,0 +1,21 @@
+(library
+ (name scrutiny_infrastructure)
+ (public_name scrutiny.infrastructure)
+ (libraries
+  ; Core libraries
+  containers
+  fmt
+  fpath
+  logs
+  lwt
+  lwt.unix
+  ppx_yojson_conv_lib
+  result
+  scrutiny.diff
+  yojson
+  ; Cache
+  sqlite3
+  ; Command line
+  cmdliner)
+ (preprocess
+  (pps lwt_ppx ppx_yojson_conv)))

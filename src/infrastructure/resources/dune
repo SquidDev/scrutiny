@@ -1,0 +1,24 @@
+(library
+ (name scrutiny_infrastructure_resources)
+ (public_name scrutiny.infrastructure.resources)
+ (libraries
+  ; Core
+  containers
+  fmt
+  fpath
+  logs
+  lwt
+  lwt.unix
+  result
+  scrutiny.diff
+  scrutiny.infrastructure
+  yojson
+  ; File resource
+  digestif
+  jingoo
+  ; Service resource
+  obus
+  scrutiny.systemd
+  lwt_log)
+ (preprocess
+  (pps lwt_ppx ppx_yojson_conv)))

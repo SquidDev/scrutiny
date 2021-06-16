@@ -1,0 +1,17 @@
+(executable
+ (name tunnel)
+ (modules tunnel)
+ (libraries cmdliner fmt fmt.tty logs logs.fmt lwt lwt.unix
+   scrutiny_infrastructure scrutiny_infrastructure_resources))
+
+(rule
+ (target tunnel.min.exe)
+ (deps tunnel.exe)
+ (action
+  (run upx -o %{target} %{deps})))
+
+(install
+ (section bin)
+ (package scrutiny)
+ (files
+  (tunnel.min.exe as scrutiny-infra-tunnel)))

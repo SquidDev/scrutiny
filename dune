@@ -15,7 +15,10 @@
     -strict-sequence
     -safe-string
     -g
-    -annot))))
+    -annot)))
+ (release
+  (ocamlopt_flags
+   (:standard -O3))))
 
 (alias
  (name opam)

@@ -43,6 +43,7 @@
     prometheus
     re
     react
+    sqlite3
     tls
     uri
     yojson

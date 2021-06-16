@@ -20,5 +20,12 @@ val empty : t
 (** Make a diff from a list of strings.. *)
 val of_lines : (change * string) list -> t
 
+(** Make a diff from a single value. Either returns a single line of [`Same] or a pair of [`Remove]
+    and [`Add]. *)
+val of_line : old:string -> new_:string -> t
+
+(** Make a diff from a two multi-line strings. *)
+val of_diff : old:string -> new_:string -> t
+
 (** Make a diff from a map of objects and different objects. *)
 val structure : (string * t) list -> t

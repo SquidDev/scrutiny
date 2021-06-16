@@ -1,0 +1,24 @@
+{%- set pid_file = "/run/openresty.pd" -%}
+{%- set openresty_cmd = "/usr/local/openresty/nginx/sbin/nginx -p /etc/nginx -c nginx.conf -g 'pid /run/openresty.pid; daemon on; master_process on;'" -%}
+
+[Unit]
+Description=The OpenResty Application Platform
+After=syslog.target network-online.target remote-fs.target nss-lookup.target
+Wants=network-online.target
+
+[Service]
+Type=forking
+PIDFile={{ pid_file }}
+
+ExecStartPre={{ openresty_cmd }} -t -q
+ExecStart={{ openresty_cmd }}
+ExecReload={{ openresty_cmd }} -s reload
+ExecStop=-/sbin/start-stop-daemon --quiet --stop --retry QUIT/5 --pidfile {{ pid_file }}
+TimeoutStopSec=5
+KillMode=mixed
+
+PrivateTmp=true
+PrivateDevices=true
+
+[Install]
+WantedBy=multi-user.target
