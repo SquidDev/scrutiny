@@ -30,11 +30,13 @@
     cohttp-lwt-unix
     (containers (>= 3.0.1))
     ctypes
+    digestif
     fmt
     fpath
     httpaf
     httpaf-lwt-unix
     integers
+    jingoo
     logs
     lwt
     lwt_ppx
@@ -43,6 +45,7 @@
     prometheus
     re
     react
+    result
     sqlite3
     tls
     uri
