@@ -4,6 +4,8 @@ open struct
   let _ = Scrutiny_infrastructure_resources.File_resource.file
 
   let _ = Scrutiny_infrastructure_resources.Service_resource.service
+
+  let _ = Scrutiny_infrastructure_resources.Directory_resource.directory
 end
 
 let () =
