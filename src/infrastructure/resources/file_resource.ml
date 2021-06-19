@@ -40,25 +40,37 @@ module File = struct
   let pp out x = Fmt.fmt "File %a" out Fpath.pp x
 
   type partial_state =
-    { user : int;
-      group : int;
-      perms : int;
+    { file_mod : File_mod.t;
       contents : string
     }
 
+  let rows : partial_state Scrutiny_diff.Structure.row list =
+    let open Scrutiny_diff.Structure in
+    List.map (map (fun x -> x.file_mod)) File_mod.rows
+    @ [ { name = "contents";
+          diff = (fun x y -> Scrutiny_diff.of_diff ~old:x.contents ~new_:y.contents);
+          basic =
+            (fun change x ->
+              String.split_on_char '\n' x.contents
+              |> List.map (fun l -> (change, l))
+              |> Scrutiny_diff.of_lines)
+        }
+      ]
+
   let get_current_state path =
-    match%lwt Lwt_unix.stat (Fpath.to_string path) with
-    | { st_kind = S_REG; st_uid; st_gid; st_perm; _ } ->
+    let open More_lets in
+    match%lwt File_mod.stat ~expected_kind:S_REG ~expected_kind_str:"file" path with
+    | Error e -> Lwt.return_error e
+    | Ok None -> Lwt.return_ok None
+    | Ok (Some file_mod) ->
         let%lwt contents = Lwt_io.with_file ~mode:Lwt_io.input (Fpath.to_string path) Lwt_io.read in
-        Lwt.return_ok (Some { user = st_uid; group = st_gid; perms = st_perm; contents })
-    | _ -> Lwt.return_error "Path exists, but is not a file"
-    | exception Unix.Unix_error (Unix.ENOENT, _, _) -> Lwt.return_ok None
+        Lwt.return_ok (Some { file_mod; contents })
 
   let state_to_partial { FileState.user; group; contents; perms; _ } =
     let%lwt user = User.uid_of user and group = User.gid_of group in
     match (user, group) with
     | Error e, _ | _, Error e -> Lwt.return_error e
-    | Ok user, Ok group -> Lwt.return_ok { user; group; contents; perms }
+    | Ok user, Ok group -> Lwt.return_ok { file_mod = { user; group; perms }; contents }
 
   let is_dirty f (current : partial_state option) target =
     match current with
@@ -74,59 +86,29 @@ module File = struct
     in
     go []
 
-  let do_apply ~path (current : partial_state option) (target : FileState.t) :
+  let do_apply ~path (current : partial_state option) (target : partial_state) :
       (unit, string) result Lwt.t =
-    let file_path = Fpath.to_string path in
     let%lwt () =
       if is_dirty (fun x -> x.contents) current target.contents then (
         mkdirs (Fpath.parent path);
-        (* TODO: Set owner and perms. *)
-        Lwt_io.with_file ~perm:target.perms ~mode:Lwt_io.output file_path @@ fun h ->
-        Lwt_io.write h target.contents)
+        Lwt_io.with_file ~perm:target.file_mod.perms ~mode:Lwt_io.output (Fpath.to_string path)
+        @@ fun h -> Lwt_io.write h target.contents)
       else Lwt.return ()
     in
-    Lwt.return_ok ()
+    File_mod.apply ~current:(Option.map (fun x -> x.file_mod) current) ~target:target.file_mod path
 
   let apply path (target : FileState.t) () : (Infra.change, string) result Lwt.t =
     let%lwt current = get_current_state path and target' = state_to_partial target in
     match (current, target') with
     | Error e, _ | _, Error e -> Lwt.return_error e
     | Ok (Some current), Ok target
-      when current.user = target.user && current.group = target.group
-           && current.perms = target.perms
-           && current.contents = target.contents ->
+      when current.file_mod = target.file_mod && current.contents = target.contents ->
         Lwt.return_ok Infra.Correct
-    | Ok None, Ok target' ->
-        let open Scrutiny_diff in
+    | Ok current, Ok target ->
         let change =
           Infra.NeedsChange
-            { diff =
-                structure
-                  [ ("user", of_lines [ (`Add, string_of_int target'.user) ]);
-                    ("group", of_lines [ (`Add, string_of_int target'.group) ]);
-                    ("perms", of_lines [ (`Add, Printf.sprintf "%3o" target'.perms) ]);
-                    ( "contents",
-                      String.split_on_char '\n' target'.contents
-                      |> List.map (fun x -> (`Add, x))
-                      |> of_lines )
-                  ];
-              apply = (fun () -> do_apply ~path None target)
-            }
-        in
-        Lwt.return_ok change
-    | Ok (Some current), Ok target' ->
-        let open Scrutiny_diff in
-        let basic f current target = of_line ~old:(f current) ~new_:(f target) in
-        let change =
-          Infra.NeedsChange
-            { diff =
-                structure
-                  [ ("user", basic string_of_int current.user target'.user);
-                    ("group", basic string_of_int current.group target'.group);
-                    ("perms", basic (Printf.sprintf "%3o") current.perms target'.perms);
-                    ("contents", of_diff ~old:current.contents ~new_:target'.contents)
-                  ];
-              apply = (fun () -> do_apply ~path (Some current) target)
+            { diff = Scrutiny_diff.Structure.compare rows current (Some target);
+              apply = (fun () -> do_apply ~path current target)
             }
         in
         Lwt.return_ok change

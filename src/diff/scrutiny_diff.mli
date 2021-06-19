@@ -29,3 +29,17 @@ val of_diff : old:string -> new_:string -> t
 
 (** Make a diff from a map of objects and different objects. *)
 val structure : (string * t) list -> t
+
+module Structure : sig
+  type 'a row =
+    { name : string;
+      diff : 'a -> 'a -> t;
+      basic : change -> 'a -> t
+    }
+
+  val row : name:string -> pp:('b -> string) -> ?eq:('b -> 'b -> bool) -> ('a -> 'b) -> 'a row
+
+  val compare : 'a row list -> 'a option -> 'a option -> t
+
+  val map : ('b -> 'a) -> 'a row -> 'b row
+end

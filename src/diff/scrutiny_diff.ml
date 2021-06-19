@@ -63,3 +63,28 @@ let rec pp_child ~full out = function
           field (pp_child ~full) change
 
 let pp ?(full = false) out = Format.fprintf out "@[<v>%a@]" (pp_child ~full)
+
+module Structure = struct
+  type 'a row =
+    { name : string;
+      diff : 'a -> 'a -> t;
+      basic : change -> 'a -> t
+    }
+
+  let row ~name ~pp ?(eq = ( = )) getter =
+    let diff x y =
+      let x = getter x and y = getter y in
+      if eq x y then of_lines [ (`Same, pp x) ] else of_lines [ (`Remove, pp x); (`Add, pp y) ]
+    in
+    { name; diff; basic = (fun change x -> of_lines [ (change, pp (getter x)) ]) }
+
+  let compare fields l r =
+    match (l, r) with
+    | None, None -> structure []
+    | Some l, None -> structure (List.map (fun row -> (row.name, row.basic `Remove l)) fields)
+    | None, Some r -> structure (List.map (fun row -> (row.name, row.basic `Remove r)) fields)
+    | Some l, Some r -> structure (List.map (fun row -> (row.name, row.diff l r)) fields)
+
+  let map f { name; diff; basic } =
+    { name; diff = (fun x y -> diff (f x) (f y)); basic = (fun c x -> basic c (f x)) }
+end
