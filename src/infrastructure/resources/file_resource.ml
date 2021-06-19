@@ -58,7 +58,6 @@ module File = struct
       ]
 
   let get_current_state path =
-    let open More_lets in
     match%lwt File_mod.stat ~expected_kind:S_REG ~expected_kind_str:"file" path with
     | Error e -> Lwt.return_error e
     | Ok None -> Lwt.return_ok None

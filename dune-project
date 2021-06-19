@@ -1,5 +1,4 @@
 (lang dune 2.7)
-(using menhir 2.0)
 (implicit_transitive_deps false)
 (generate_opam_files true)
 
@@ -7,13 +6,13 @@
 (version 0.1.0)
 (authors "Jonathan Coates")
 (license BSD-3-Clause)
-(source (github squiddev/status.squiddev.cc))
+(source (github squiddev/scrutiny))
 (maintainers "Jonathan Coates <git@squiddev.cc>")
 
 (package
   (name scrutiny)
-  (synopsis "Checks how well squid is doing")
-  (description "A home grown infrastructure monitoring toolkit, because I'm silly.")
+  (synopsis "Bits and bobs for wrangling my server. ")
+  (description "A home grown infrastructure management and monitoring toolkit, because I'm silly.")
   (depends
     (ocaml (>= 4.08))
 
