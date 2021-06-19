@@ -43,14 +43,24 @@ let apply ?(executor = Executor.local) ?dry_run rules : unit Lwt.t =
 let main ?executor rules =
   Printexc.record_backtrace true;
   Fmt_tty.setup_std_outputs ();
-  Logs.set_level ~all:true (Some Debug);
   Logs.set_reporter (Logs_fmt.reporter ());
   let open Cmdliner in
   let ( let+ ) x f = Term.(const f $ x) in
+  let ( and+ ) a b = Term.(const (fun x y -> (x, y)) $ a $ b) in
 
   let doc = "Applies a state specified by a file." in
   let term : unit Term.t =
-    let+ dry_run = Arg.(value @@ vflag false [ (true, info [ "dry-run"; "-d" ]) ]) in
+    let+ dry_run =
+      let open Arg in
+      value @@ flag
+      @@ info
+           ~doc:"Do not actually apply these states, only printing out what would have changed."
+           [ "dry-run"; "d" ]
+    and+ verbose =
+      let open Arg in
+      value @@ flag @@ info ~doc:"Print more verbose log messages." [ "verbose"; "v" ]
+    in
+    Logs.set_level ~all:true (Some (if verbose then Debug else Info));
     Lwt_main.run (apply ?executor ~dry_run rules)
   in
   Term.exit @@ Term.eval (term, Term.info Sys.executable_name ~doc)
