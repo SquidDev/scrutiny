@@ -38,8 +38,8 @@ module Dir = struct
     | Ok user, Ok group -> Lwt.return_ok { File_mod.user; group; perms }
 
   let apply path (target : DirState.t) () : (Infra.change, string) result Lwt.t =
-    let%lwt current = get_state path and target' = state_to_partial target in
-    match (current, target') with
+    let%lwt current = get_state path and target = state_to_partial target in
+    match (current, target) with
     | Error e, _ | _, Error e -> Lwt.return_error e
     | Ok (Some current), Ok target
       when current.user = target.user && current.group = target.group

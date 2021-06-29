@@ -82,7 +82,7 @@ module Structure = struct
     match (l, r) with
     | None, None -> structure []
     | Some l, None -> structure (List.map (fun row -> (row.name, row.basic `Remove l)) fields)
-    | None, Some r -> structure (List.map (fun row -> (row.name, row.basic `Remove r)) fields)
+    | None, Some r -> structure (List.map (fun row -> (row.name, row.basic `Add r)) fields)
     | Some l, Some r -> structure (List.map (fun row -> (row.name, row.diff l r)) fields)
 
   let map f { name; diff; basic } =
