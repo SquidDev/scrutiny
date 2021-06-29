@@ -74,6 +74,7 @@ let main ?executor rules =
       list
         [ spinner ~color:(ansi (`bright `green)) ();
           bar ~color:(ansi (`bright `cyan)) ~style:`UTF8 total;
+          parens (elapsed ());
           brackets (count_to total)
         ]
     in

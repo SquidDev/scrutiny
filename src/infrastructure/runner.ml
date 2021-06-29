@@ -1,9 +1,8 @@
 open Core
 
 type state =
-  | NotStarted
-  | WaitingDep of boxed_key
-  | Finished : (bool, unit) result -> state
+  | Pending of (bool, unit) result Lwt.t
+  | Finished of (bool, unit) result
 
 type t =
   { keys : state KeyTbl.t;
@@ -21,7 +20,7 @@ let eval_action (type key value options) ~(resource : (key, value, options) Reso
     | Pure v -> Ok (v, R.EdgeOptions.default, false)
     | Need (options, (Resource _ as key)) -> (
       match KeyTbl.find store.keys (BKey key) with
-      | NotStarted | WaitingDep _ -> failwith "Impossible: Key not ready"
+      | Pending _ -> failwith "Impossible: Key not ready"
       | Finished (Error ()) -> Error ()
       | Finished (Ok changed) ->
           Ok ((), (if changed then options else R.EdgeOptions.default), changed))
@@ -39,8 +38,8 @@ let eval_action (type key value options) ~(resource : (key, value, options) Reso
       Lwt.return_ok (value, options, changed)
 
 (** Evaluate a rule, assuming all dependencies have been built. *)
-let eval_rule ~(executor : Executor.t) ~dry_run ~store boxed_key =
-  let (BKey (Resource { resource; key; value; user; dependencies = _ })) = boxed_key in
+let eval_rule ~(executor : Executor.t) ~dry_run ~store bkey =
+  let (BKey (Resource { resource; key; value; user; dependencies = _ })) = bkey in
   let module R = (val resource) in
   let logger = Logs.src_log (Logs.Src.create (Format.asprintf "%a" R.pp key)) in
   let module Log = (val logger) in
@@ -80,38 +79,80 @@ let eval_rule ~(executor : Executor.t) ~dry_run ~store boxed_key =
                   Log.err (fun f -> f "Exception applying changes: %s" e);
                   Lwt.return_error ()))
   in
-  KeyTbl.replace store.keys boxed_key (Finished (Result.map snd result));
+  Lwt.return (Result.map snd result)
+
+let rec build_rule ~executor ~dry_run ~store bkey resolve =
+  let (BKey (Resource { dependencies; _ })) = bkey in
+  let rec eval_deps = function
+    | [] -> Lwt.return_ok ()
+    | dep :: deps -> (
+        let%lwt result =
+          match KeyTbl.find store.keys dep with
+          | Finished f -> Lwt.return f
+          | Pending x -> x
+        in
+        match result with
+        | Ok _ -> eval_deps deps
+        | Error _ -> Lwt.return_error ())
+  in
+
+  let%lwt result =
+    match%lwt eval_deps dependencies with
+    | Ok () -> eval_rule ~executor ~dry_run ~store bkey
+    | Error () -> Lwt.return_error ()
+  in
+
+  KeyTbl.replace store.keys bkey (Finished result);
+  Lwt.wakeup_later resolve result;
   store.key_done ();
   Lwt.return_unit
 
-let rec build_rule ~executor ~dry_run ~store bkey =
-  match KeyTbl.find store.keys bkey with
-  | Finished _ -> Lwt.return_unit
-  | WaitingDep _ -> failwith "Loop in dependency graph"
-  | NotStarted ->
-      let (BKey (Resource { dependencies; _ })) = bkey in
-      let%lwt () =
-        dependencies
-        |> Lwt_list.iter_s @@ fun d ->
-           KeyTbl.replace store.keys bkey (WaitingDep d);
-           build_rule ~executor ~dry_run ~store d
-      in
-      eval_rule ~executor ~dry_run ~store bkey
-
 let default_progress _ = ()
+
+let check_graph is_present rules =
+  let visited = KeyTbl.create (List.length rules) in
+  let rec go stack node =
+    let (BKey (Resource { dependencies; key })) = node in
+    if KeyTbl.mem visited node then Ok ()
+    else if not (is_present node) then Error "Missing node in rule list"
+    else if List.memq node stack then Error "Loop in dependency graph"
+    else (
+      KeyTbl.replace visited node true;
+      go_all (node :: stack) dependencies)
+  and go_all stack = function
+    | [] -> Ok ()
+    | x :: xs -> (
+      match go stack x with
+      | Ok () -> go_all stack xs
+      | Error _ as e -> e)
+  in
+  go_all [] rules
 
 let apply ?(progress = default_progress) ?(executor = Executor.local) ?(dry_run = false)
     (rules : Rules.rules) =
   let key_done () = progress 1 in
   let keys = KeyTbl.create (List.length rules) in
-  List.iter (fun key -> KeyTbl.replace keys key NotStarted) rules;
   let store = { keys; key_done } in
-  let%lwt () = Lwt_list.iter_s (build_rule ~executor ~dry_run ~store) rules in
-  let ok =
-    KeyTbl.to_seq keys |> Seq.map snd
-    |> CCSeq.for_all (function
-         | NotStarted | WaitingDep _ | Finished (Ok _) -> true
-         | Finished (Error _) -> false)
+
+  let tasks =
+    List.rev_map
+      (fun key ->
+        let task, resolve = Lwt.wait () in
+        KeyTbl.replace keys key (Pending task);
+        fun () -> build_rule ~executor ~dry_run ~store key resolve)
+      rules
   in
-  if not ok then exit 1;
-  Lwt.return_unit
+  match check_graph (KeyTbl.mem keys) rules with
+  | Error e ->
+      Logs.err (fun f -> f "%s" e);
+      exit 1
+  | Ok () ->
+      let%lwt () = Lwt_list.iter_p (fun f -> f ()) tasks in
+      let ok =
+        KeyTbl.to_seq keys |> Seq.map snd
+        |> CCSeq.for_all (function
+             | Finished (Ok _) -> true
+             | Finished (Error _) -> false)
+      in
+      if not ok then exit 1;
+      Lwt.return_unit
