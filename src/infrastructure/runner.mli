@@ -1,2 +1,7 @@
 (** Apply a batch of rules. *)
-val apply : ?executor:Executor.t -> ?dry_run:bool -> unit Core.Rules.t -> unit Lwt.t
+val apply :
+  ?progress:(int -> unit) ->
+  ?executor:Executor.t ->
+  ?dry_run:bool ->
+  Core.Rules.rules ->
+  unit Lwt.t

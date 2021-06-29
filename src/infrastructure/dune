@@ -16,6 +16,7 @@
   ; Cache
   sqlite3
   ; Command line
-  cmdliner)
+  cmdliner
+  progress)
  (preprocess
   (pps lwt_ppx ppx_yojson_conv)))

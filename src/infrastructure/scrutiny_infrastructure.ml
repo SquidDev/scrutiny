@@ -35,15 +35,19 @@ module Executor = struct
     | Error e -> failwith e
 end
 
-let apply ?(executor = Executor.local) ?dry_run rules : unit Lwt.t =
+let apply_ ?progress ?(executor = Executor.local) ?dry_run rules : unit Lwt.t =
   Lwt_switch.with_switch @@ fun switch ->
   let%lwt executor = executor (Some switch) in
-  Runner.apply ~executor ?dry_run rules
+  Runner.apply ?progress ~executor ?dry_run rules
+
+let apply ?executor ?dry_run rules =
+  let (), rules = rules { Core.Rules.rules = []; user = `Current } in
+  apply_ ?executor ?dry_run rules
 
 let main ?executor rules =
   Printexc.record_backtrace true;
   Fmt_tty.setup_std_outputs ();
-  Logs.set_reporter (Logs_fmt.reporter ());
+  Logs.set_reporter (Progress.logs_reporter ());
   let open Cmdliner in
   let ( let+ ) x f = Term.(const f $ x) in
   let ( and+ ) a b = Term.(const (fun x y -> (x, y)) $ a $ b) in
@@ -61,6 +65,19 @@ let main ?executor rules =
       value @@ flag @@ info ~doc:"Print more verbose log messages." [ "verbose"; "v" ]
     in
     Logs.set_level ~all:true (Some (if verbose then Debug else Info));
-    Lwt_main.run (apply ?executor ~dry_run rules)
+
+    let (), rules = rules { Core.Rules.rules = []; user = `Current } in
+
+    let bar ~total =
+      let open Progress.Line in
+      let open Progress.Color in
+      list
+        [ spinner ~color:(ansi (`bright `green)) ();
+          bar ~color:(ansi (`bright `cyan)) ~style:`UTF8 total;
+          brackets (count_to total)
+        ]
+    in
+    Progress.with_reporter (bar ~total:(List.length rules)) @@ fun progress ->
+    Lwt_main.run (apply_ ~progress ?executor ~dry_run rules)
   in
   Term.exit @@ Term.eval (term, Term.info Sys.executable_name ~doc)

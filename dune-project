@@ -41,6 +41,7 @@
     lwt_ppx
     ppx_yojson_conv
     ppx_yojson_conv_lib
+    (progress (>= 0.2.0))
     prometheus
     re
     react

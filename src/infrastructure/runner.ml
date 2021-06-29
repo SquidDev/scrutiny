@@ -5,7 +5,10 @@ type state =
   | WaitingDep of boxed_key
   | Finished : (bool, unit) result -> state
 
-type t = state KeyTbl.t
+type t =
+  { keys : state KeyTbl.t;
+    key_done : unit -> unit
+  }
 
 (** Evaluate an action, assuming all dependencies have been built.
 
@@ -17,7 +20,7 @@ let eval_action (type key value options) ~(resource : (key, value, options) Reso
   let rec go : type ret. (ret, options) action -> (ret * options * bool, unit) result = function
     | Pure v -> Ok (v, R.EdgeOptions.default, false)
     | Need (options, (Resource _ as key)) -> (
-      match KeyTbl.find store (BKey key) with
+      match KeyTbl.find store.keys (BKey key) with
       | NotStarted | WaitingDep _ -> failwith "Impossible: Key not ready"
       | Finished (Error ()) -> Error ()
       | Finished (Ok changed) ->
@@ -77,11 +80,12 @@ let eval_rule ~(executor : Executor.t) ~dry_run ~store boxed_key =
                   Log.err (fun f -> f "Exception applying changes: %s" e);
                   Lwt.return_error ()))
   in
-  KeyTbl.replace store boxed_key (Finished (Result.map snd result));
+  KeyTbl.replace store.keys boxed_key (Finished (Result.map snd result));
+  store.key_done ();
   Lwt.return_unit
 
 let rec build_rule ~executor ~dry_run ~store bkey =
-  match KeyTbl.find store bkey with
+  match KeyTbl.find store.keys bkey with
   | Finished _ -> Lwt.return_unit
   | WaitingDep _ -> failwith "Loop in dependency graph"
   | NotStarted ->
@@ -89,18 +93,22 @@ let rec build_rule ~executor ~dry_run ~store bkey =
       let%lwt () =
         dependencies
         |> Lwt_list.iter_s @@ fun d ->
-           KeyTbl.replace store bkey (WaitingDep d);
+           KeyTbl.replace store.keys bkey (WaitingDep d);
            build_rule ~executor ~dry_run ~store d
       in
       eval_rule ~executor ~dry_run ~store bkey
 
-let apply ?(executor = Executor.local) ?(dry_run = false) (rules : unit Rules.t) =
-  let (), rules = rules { rules = []; user = `Current } in
-  let store = KeyTbl.create (List.length rules) in
-  List.iter (fun key -> KeyTbl.replace store key NotStarted) rules;
+let default_progress _ = ()
+
+let apply ?(progress = default_progress) ?(executor = Executor.local) ?(dry_run = false)
+    (rules : Rules.rules) =
+  let key_done () = progress 1 in
+  let keys = KeyTbl.create (List.length rules) in
+  List.iter (fun key -> KeyTbl.replace keys key NotStarted) rules;
+  let store = { keys; key_done } in
   let%lwt () = Lwt_list.iter_s (build_rule ~executor ~dry_run ~store) rules in
   let ok =
-    KeyTbl.to_seq store |> Seq.map snd
+    KeyTbl.to_seq keys |> Seq.map snd
     |> CCSeq.for_all (function
          | NotStarted | WaitingDep _ | Finished (Ok _) -> true
          | Finished (Error _) -> false)
