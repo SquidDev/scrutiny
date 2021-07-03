@@ -16,6 +16,16 @@ module type BasicValue = sig
   val t_of_yojson : Yojson.Safe.t -> t
 end
 
+module Remote = struct
+  type t =
+    { host : string;
+      tunnel_path : string;
+      sudo_pw : string option
+    }
+
+  let make ?sudo_pw ?(tunnel_path = "scrutiny-infra-tunnel") host = { host; tunnel_path; sudo_pw }
+end
+
 type change =
   | Correct
   | NeedsChange of
@@ -72,12 +82,17 @@ module Resource = struct
     resource
 end
 
+type machine =
+  | Local
+  | Remote of Remote.t
+
 type ('key, 'value, 'options) resource =
   { resource : ('key, 'value, 'options) Resource.t;
     key : 'key;
     dependencies : boxed_key list;
     value : ('value Lwt.t, 'options) action;
-    user : user
+    user : user;
+    machine : machine
   }
 
 and ('result, 'kind) key =
@@ -120,12 +135,13 @@ module Rules = struct
 
   type context =
     { rules : rules;
-      user : user
+      user : user;
+      machine : machine
     }
 
-  type 'a t = context -> 'a * rules
+  type ('ctx, 'a) t = context -> 'a * rules
 
-  let ( let* ) (x : 'a t) (f : 'a -> 'b t) context : 'b * rules =
+  let ( let* ) (x : ('ctx, 'a) t) (f : 'a -> ('ctx, 'b) t) context : 'b * rules =
     let x, rules = x context in
     f x { context with rules }
 
@@ -137,15 +153,24 @@ module Rules = struct
     let value = value () (module R.EdgeOptions) in
     let key =
       Resource
-        { resource; key; value = value.term; dependencies = value.edges; user = context.user }
+        { resource;
+          key;
+          value = value.term;
+          dependencies = value.edges;
+          user = context.user;
+          machine = context.machine
+        }
     in
     (key, BKey key :: context.rules)
 
-  let with_user user (f : unit -> 'a t) context : 'a * rules =
+  let with_user user (f : unit -> ([ `User ], 'a) t) context : 'a * rules =
     f () { context with user = `Name user }
 
-  let with_user_uid user (f : unit -> 'a t) context : 'a * rules =
+  let with_user_uid user (f : unit -> ([ `User ], 'a) t) context : 'a * rules =
     f () { context with user = `Id user }
+
+  let with_remote remote (f : unit -> ([ `Remote ], 'a) t) context : 'a * rules =
+    f () { context with machine = Remote remote }
 end
 
 module KeyTbl = Hashtbl.Make (struct

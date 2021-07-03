@@ -26,3 +26,13 @@ let map f : 'a t -> 'b t = function
   | Ok x -> Ok (f x)
   | Error e -> Error e
   | Exception e -> Exception e
+
+let log (module Log : Logs.LOG) l (err, exn) =
+  match%lwt l with
+  | Error e ->
+      Log.err (fun f -> f "%s: %s" err e);
+      Lwt.return_error ()
+  | Exception e ->
+      Log.err (fun f -> f "%s: %s" exn e);
+      Lwt.return_error ()
+  | Ok x -> Lwt.return_ok x

@@ -17,6 +17,13 @@ module type BasicValue = sig
   val t_of_yojson : Yojson.Safe.t -> t
 end
 
+(** A remote server that commands can be run on. *)
+module Remote : sig
+  type t
+
+  val make : ?sudo_pw:string -> ?tunnel_path:string -> string -> t
+end
+
 (** A change which will be applied to a resource. *)
 type change =
   | Correct  (** This resource is in the correct state and no changes need be made.*)
@@ -109,24 +116,27 @@ end
 
 (** A monad of rules. This declares a set of resources to create and dependencies between them. *)
 module Rules : sig
-  type 'a t
+  type ('ctx, 'res) t
 
-  val ( let* ) : 'a t -> ('a -> 'b t) -> 'b t
+  val ( let* ) : ('ctx, 'a) t -> ('a -> ('ctx, 'b) t) -> ('ctx, 'b) t
 
-  val pure : 'a -> 'a t
+  val pure : 'a -> ('ctx, 'a) t
 
   (** Register a resource in this rule set. *)
   val resource :
     ('key, 'value, 'options) Resource.t ->
     'key ->
     (unit -> ('value Lwt.t, 'options) Action.t) ->
-    (unit, [ `Resource ]) key t
+    ('ctx, (unit, [ `Resource ]) key) t
 
   (** Run a set of rules as a particular user. *)
-  val with_user : string -> (unit -> 'a t) -> 'a t
+  val with_user : string -> (unit -> ([ `User ], 'a) t) -> ('ctx, 'a) t
 
   (** Run a set of rules as a particular user. *)
-  val with_user_uid : int -> (unit -> 'a t) -> 'a t
+  val with_user_uid : int -> (unit -> ([ `User ], 'a) t) -> ('ctx, 'a) t
+
+  (** Run a command on a particular remote. *)
+  val with_remote : Remote.t -> (unit -> ([ `Remote ], 'a) t) -> ([ `Local ], 'a) t
 end
 
 (** {2 Builtin {!BasicValue}s for some types} *)
@@ -152,21 +162,12 @@ module Path : sig
 end
 
 (** {3 Applying states} *)
-module Executor : sig
-  type t
-
-  (** Run these states on the local computer as the current user. *)
-  val local : t
-
-  (** Apply these states to a remote computer, connecting via SSH. *)
-  val ssh : ?sudo_pw:string -> host:string -> unit -> t
-
-  (* Start an instance listening for instructions from stdin and printing to stdout. *)
-  val run_tunnel : unit -> unit Lwt.t
-end
 
 (** Apply a collection of rules. *)
-val apply : ?executor:Executor.t -> ?dry_run:bool -> unit Rules.t -> unit Lwt.t
+val apply : ?dry_run:bool -> ([ `Local ], unit) Rules.t -> unit Lwt.t
 
 (** Parse command line arguments and apply a set of rules. *)
-val main : ?executor:Executor.t -> unit Rules.t -> unit
+val main : ([ `Local ], unit) Rules.t -> unit
+
+(* Start an instance listening for instructions from stdin and printing to stdout. *)
+val run_tunnel : unit -> unit

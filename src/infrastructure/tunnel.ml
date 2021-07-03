@@ -325,3 +325,18 @@ and make_executor_factory ?switch () : Core.user -> Executor.t Or_exn.t Lwt.t =
         else memo user
   in
   find
+
+let ssh ?switch ({ sudo_pw; host; tunnel_path } : Remote.t) =
+  Lwt_switch.check switch;
+  let setup, cmd =
+    match sudo_pw with
+    | None -> (wait_for_init, [| "ssh"; host; tunnel_path |])
+    | Some password ->
+        let prompt proc =
+          let%lwt () = Lwt_unix.sleep 0.5 (* TODO: Wait for prompt rather than sleeping. *) in
+          let%lwt () = Lwt_io.write_line proc#stdin password in
+          wait_for_init proc
+        in
+        (prompt, [| "ssh"; host; "sudo"; "-S"; "-p"; "sudo[scrutiny-infra-tunnel]: "; tunnel_path |])
+  in
+  executor_of_cmd ?switch setup cmd

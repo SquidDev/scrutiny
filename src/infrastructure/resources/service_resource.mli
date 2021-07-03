@@ -13,4 +13,4 @@ val service :
   name:string ->
   scope:[ `System | `User ] ->
   (unit -> (service_state, [ `None | `Restart | `Reload ]) Action.t) ->
-  (unit, [ `Resource ]) key Rules.t
+  ('ctx, (unit, [ `Resource ]) key) Rules.t

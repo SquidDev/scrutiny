@@ -12,3 +12,5 @@ val executor_of_cmd :
   (Lwt_process.process -> (unit, string) result Lwt.t) ->
   string array ->
   (Executor.t, string) result Lwt.t
+
+val ssh : ?switch:Lwt_switch.t -> Core.Remote.t -> (Executor.t, string) result Lwt.t

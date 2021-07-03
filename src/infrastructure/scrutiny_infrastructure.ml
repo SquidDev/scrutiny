@@ -1,50 +1,14 @@
 include Core
 include Types
 
-module Executor = struct
-  type t = Lwt_switch.t option -> Executor.t Lwt.t
+let apply_ ?progress ?dry_run rules : unit Lwt.t =
+  Lwt_switch.with_switch @@ fun switch -> Runner.apply ?progress ~switch ?dry_run rules
 
-  let local : t = fun _ -> Lwt.return Executor.local
+let apply ?dry_run rules =
+  let (), rules = rules { Core.Rules.rules = []; user = `Current; machine = Local } in
+  apply_ ?dry_run rules
 
-  let run_tunnel () = Lwt_switch.with_switch (fun switch -> Tunnel.run_tunnel ~switch ())
-
-  let ssh ?sudo_pw ~host () : t =
-   fun switch ->
-    Lwt_switch.check switch;
-    let setup, cmd =
-      match sudo_pw with
-      | None -> (Tunnel.wait_for_init, [| "ssh"; host; "~/.local/bin/scrutiny-infra-tunnel" |])
-      | Some password ->
-          let prompt proc =
-            let%lwt () = Lwt_unix.sleep 0.5 (* TODO: Wait for prompt rather than sleeping. *) in
-            let%lwt () = Lwt_io.write_line proc#stdin password in
-            Tunnel.wait_for_init proc
-          in
-          ( prompt,
-            [| "ssh";
-               host;
-               "sudo";
-               "-S";
-               "-p";
-               "sudo[scrutiny-infra-tunnel]: ";
-               "~/.local/bin/scrutiny-infra-tunnel"
-            |] )
-    in
-    match%lwt Tunnel.executor_of_cmd ?switch setup cmd with
-    | Ok x -> Lwt.return x
-    | Error e -> failwith e
-end
-
-let apply_ ?progress ?(executor = Executor.local) ?dry_run rules : unit Lwt.t =
-  Lwt_switch.with_switch @@ fun switch ->
-  let%lwt executor = executor (Some switch) in
-  Runner.apply ?progress ~executor ?dry_run rules
-
-let apply ?executor ?dry_run rules =
-  let (), rules = rules { Core.Rules.rules = []; user = `Current } in
-  apply_ ?executor ?dry_run rules
-
-let main ?executor rules =
+let main rules =
   Printexc.record_backtrace true;
   Fmt_tty.setup_std_outputs ();
   Logs.set_reporter (Progress.logs_reporter ());
@@ -66,7 +30,7 @@ let main ?executor rules =
     in
     Logs.set_level ~all:true (Some (if verbose then Debug else Info));
 
-    let (), rules = rules { Core.Rules.rules = []; user = `Current } in
+    let (), rules = rules { Core.Rules.rules = []; user = `Current; machine = Local } in
 
     let bar ~total =
       let open Progress.Line in
@@ -79,6 +43,9 @@ let main ?executor rules =
         ]
     in
     Progress.with_reporter (bar ~total:(List.length rules)) @@ fun progress ->
-    Lwt_main.run (apply_ ~progress ?executor ~dry_run rules)
+    Lwt_main.run (apply_ ~progress ~dry_run rules)
   in
   Term.exit @@ Term.eval (term, Term.info Sys.executable_name ~doc)
+
+let run_tunnel () =
+  Lwt_main.run (Lwt_switch.with_switch (fun switch -> Tunnel.run_tunnel ~switch ()))

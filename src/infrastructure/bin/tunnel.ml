@@ -13,7 +13,7 @@ let () =
   let open Cmdliner in
   let tunnel_cmd =
     let doc = "Starts a tunnel reading commands from stdin. Should not be run manually" in
-    let term () = Lwt_main.run (Scrutiny_infrastructure.Executor.run_tunnel ()) in
+    let term = Scrutiny_infrastructure.run_tunnel in
     (Term.(const term $ const ()), Term.info "scrutiny-infra-tunnel" ~doc)
   in
 

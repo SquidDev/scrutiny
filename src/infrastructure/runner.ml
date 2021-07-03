@@ -1,12 +1,22 @@
 open Core
 
+module RemoteTbl = Hashtbl.Make (struct
+  type t = Remote.t
+
+  let hash = Hashtbl.hash
+
+  let equal = ( == )
+end)
+
 type state =
   | Pending of (bool, unit) result Lwt.t
   | Finished of (bool, unit) result
 
 type t =
   { keys : state KeyTbl.t;
-    key_done : unit -> unit
+    key_done : unit -> unit;
+    executors : Executor.t Or_exn.t Lwt.t RemoteTbl.t;
+    switch : Lwt_switch.t option
   }
 
 (** Evaluate an action, assuming all dependencies have been built.
@@ -37,8 +47,20 @@ let eval_action (type key value options) ~(resource : (key, value, options) Reso
       let%lwt value = value in
       Lwt.return_ok (value, options, changed)
 
+let get_executor ~store:{ executors; switch; _ } bkey =
+  let (BKey (Resource { machine; _ })) = bkey in
+  match machine with
+  | Local -> Lwt.return (Or_exn.Ok Executor.local)
+  | Remote remote -> (
+    match RemoteTbl.find_opt executors remote with
+    | Some x -> x
+    | None ->
+        let tunnel = Or_exn.run_lwt (fun () -> Tunnel.ssh ?switch remote) in
+        RemoteTbl.replace executors remote tunnel;
+        tunnel)
+
 (** Evaluate a rule, assuming all dependencies have been built. *)
-let eval_rule ~(executor : Executor.t) ~dry_run ~store bkey =
+let eval_rule ~dry_run ~store bkey =
   let (BKey (Resource { resource; key; value; user; dependencies = _ })) = bkey in
   let module R = (val resource) in
   let logger = Logs.src_log (Logs.Src.create (Format.asprintf "%a" R.pp key)) in
@@ -53,35 +75,31 @@ let eval_rule ~(executor : Executor.t) ~dry_run ~store bkey =
         Lwt.return_error ()
     | Ok (value, options, _changed) -> (
         Log.info (fun f -> f "Applying: %a" R.pp key);
-        match%lwt executor.apply ~user resource key value options with
-        | Error e ->
-            Log.err (fun f -> f "Failed to compute changes: %s" e);
-            Lwt.return_error ()
-        | Exception e ->
-            Log.err (fun f -> f "Exception computing changes: %s" e);
-            Lwt.return_error ()
-        | Ok ECorrect ->
+        let ( let>> ) = Lwt_result.bind in
+        let ( <?> ) l r = Or_exn.log logger l r in
+        let>> executor =
+          get_executor ~store bkey <?> ("Failed to get executor", "Exception getting executor")
+        in
+        let>> result =
+          executor.apply ~user resource key value options
+          <?> ("Failed to compute changes", "Exception computing changes")
+        in
+        match result with
+        | ECorrect ->
             Log.debug (fun f -> f "No changes needed");
             Lwt.return_ok (value, false)
-        | Ok (ENeedsChange { diff; apply }) -> (
+        | ENeedsChange { diff; apply } ->
             if dry_run then (
               Log.info (fun f -> f "%a" (Scrutiny_diff.pp ~full:false) diff);
               Lwt.return_ok (value, true))
             else
-              match%lwt apply () with
-              | Ok () ->
-                  Log.info (fun f -> f "%a" (Scrutiny_diff.pp ~full:false) diff);
-                  Lwt.return_ok (value, true)
-              | Error e ->
-                  Log.err (fun f -> f "Failed to apply changes: %s" e);
-                  Lwt.return_error ()
-              | Exception e ->
-                  Log.err (fun f -> f "Exception applying changes: %s" e);
-                  Lwt.return_error ()))
+              let>> () = apply () <?> ("Failed to apply changes", "Exception applying changes") in
+              Log.info (fun f -> f "%a" (Scrutiny_diff.pp ~full:false) diff);
+              Lwt.return_ok (value, true))
   in
   Lwt.return (Result.map snd result)
 
-let rec build_rule ~executor ~dry_run ~store bkey resolve =
+let rec build_rule ~dry_run ~store bkey resolve =
   let (BKey (Resource { dependencies; _ })) = bkey in
   let rec eval_deps = function
     | [] -> Lwt.return_ok ()
@@ -98,7 +116,7 @@ let rec build_rule ~executor ~dry_run ~store bkey resolve =
 
   let%lwt result =
     match%lwt eval_deps dependencies with
-    | Ok () -> eval_rule ~executor ~dry_run ~store bkey
+    | Ok () -> eval_rule ~dry_run ~store bkey
     | Error () -> Lwt.return_error ()
   in
 
@@ -128,18 +146,17 @@ let check_graph is_present rules =
   in
   go_all [] rules
 
-let apply ?(progress = default_progress) ?(executor = Executor.local) ?(dry_run = false)
-    (rules : Rules.rules) =
+let apply ?(progress = default_progress) ?switch ?(dry_run = false) (rules : Rules.rules) =
   let key_done () = progress 1 in
   let keys = KeyTbl.create (List.length rules) in
-  let store = { keys; key_done } in
+  let store = { keys; key_done; executors = RemoteTbl.create 2; switch } in
 
   let tasks =
     List.rev_map
       (fun key ->
         let task, resolve = Lwt.wait () in
         KeyTbl.replace keys key (Pending task);
-        fun () -> build_rule ~executor ~dry_run ~store key resolve)
+        fun () -> build_rule ~dry_run ~store key resolve)
       rules
   in
   match check_graph (KeyTbl.mem keys) rules with

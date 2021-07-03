@@ -8,7 +8,7 @@ type dir_state =
 
 (** Ensure a directory exists. *)
 val directory :
-  Fpath.t -> (unit -> (dir_state Lwt.t, unit) Action.t) -> (unit, [ `Resource ]) key Rules.t
+  Fpath.t -> (unit -> (dir_state Lwt.t, unit) Action.t) -> ('ctx, (unit, [ `Resource ]) key) Rules.t
 
 (** A simpler version of {!directory}, where nothing varies. *)
 val directory' :
@@ -17,4 +17,4 @@ val directory' :
   ?group:User.t ->
   ?perms:Unix.file_perm ->
   (unit -> (unit, unit) Action.t) ->
-  (unit, [ `Resource ]) key Rules.t
+  ('ctx, (unit, [ `Resource ]) key) Rules.t
