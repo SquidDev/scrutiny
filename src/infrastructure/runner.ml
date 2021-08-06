@@ -74,7 +74,7 @@ let eval_rule ~dry_run ~store bkey =
         Log.err (fun f -> f "Exception getting value for %a: %a" R.pp key Fmt.exn_backtrace (e, bt));
         Lwt.return_error ()
     | Ok (value, options, _changed) -> (
-        Log.info (fun f -> f "Applying: %a" R.pp key);
+        Log.debug (fun f -> f "Applying: %a" R.pp key);
         let ( let>> ) = Lwt_result.bind in
         let ( <?> ) l r = Or_exn.log logger l r in
         let>> executor =
@@ -89,12 +89,10 @@ let eval_rule ~dry_run ~store bkey =
             Log.debug (fun f -> f "No changes needed");
             Lwt.return_ok (value, false)
         | ENeedsChange { diff; apply } ->
-            if dry_run then (
-              Log.info (fun f -> f "%a" (Scrutiny_diff.pp ~full:false) diff);
-              Lwt.return_ok (value, true))
+            Log.info (fun f -> f "Applying %a:@\n%a" R.pp key (Scrutiny_diff.pp ~full:false) diff);
+            if dry_run then Lwt.return_ok (value, true)
             else
               let>> () = apply () <?> ("Failed to apply changes", "Exception applying changes") in
-              Log.info (fun f -> f "%a" (Scrutiny_diff.pp ~full:false) diff);
               Lwt.return_ok (value, true))
   in
   Lwt.return (Result.map snd result)
