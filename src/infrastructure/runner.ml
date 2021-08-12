@@ -76,7 +76,10 @@ let eval_rule ~dry_run ~store bkey =
     | Ok (value, options, _changed) -> (
         Log.debug (fun f -> f "Applying: %a" R.pp key);
         let ( let>> ) = Lwt_result.bind in
-        let ( <?> ) l r = Or_exn.log logger l r in
+        let ( <?> ) action (err, exn) =
+          let key = Format.asprintf "%a %s" R.pp key in
+          Or_exn.log logger action (key err, key exn)
+        in
         let>> executor =
           get_executor ~store bkey <?> ("Failed to get executor", "Exception getting executor")
         in

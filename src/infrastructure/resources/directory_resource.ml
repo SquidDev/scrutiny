@@ -45,9 +45,15 @@ module Dir = struct
       when current.user = target.user && current.group = target.group
            && current.perms = target.perms ->
         Lwt.return_ok Infra.Correct
-    | Ok current, Ok target ->
-        let diff = Scrutiny_diff.Structure.compare File_mod.rows current (Some target) in
-        let apply () = File_mod.apply ~current ~target path in
+    | Ok None, Ok target ->
+        let diff = Scrutiny_diff.Structure.compare File_mod.rows None (Some target) in
+        let apply () =
+          match%lwt Lwt_unix.mkdir (Fpath.to_string path) target.perms with
+          | () -> File_mod.apply ~current:None ~target path
+          | exception Unix.Unix_error (code, _, _) ->
+              Lwt.return_error
+                (Format.sprintf "Failed to create directory (%s)" (Unix.error_message code))
+        in
         Lwt.return_ok (Infra.NeedsChange { diff; apply })
 end
 
