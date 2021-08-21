@@ -162,7 +162,7 @@ module Sync = struct
       SMap.to_seq overlap |> List.of_seq
       |> Lwt_list.map_p (fun (_, (spec, record)) ->
              if spec.ttl = record.Api_dns_record.ttl && spec.proxied = record.proxied then (
-               Log.info (fun f -> f "Nothing to do for record %a" Api_dns_record.pp record);
+               Log.debug (fun f -> f "Nothing to do for record %a" Api_dns_record.pp record);
                Lwt.return (true, [ (`Same, Format.asprintf "%a" pp spec) ]))
              else Updates.update ~dryrun ~auth ~zone spec record)
       >|= accumulate

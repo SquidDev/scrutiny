@@ -173,6 +173,6 @@ module Write = struct
 
   let write ?(tag = def_tag) ?(level : level = Error) ?(extra = []) message =
     write_
-    @@ map_priority level
-       :: ("SYSLOG_IDENTIFIER=" ^ tag) :: ("MESSAGE=" ^ message) :: prepare_extra extra
+    @@ map_priority level :: ("SYSLOG_IDENTIFIER=" ^ tag) :: ("MESSAGE=" ^ message)
+       :: prepare_extra extra
 end

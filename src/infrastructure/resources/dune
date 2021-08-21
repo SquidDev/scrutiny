@@ -19,6 +19,8 @@
   ; Service resource
   obus
   scrutiny.systemd
-  lwt_log)
+  lwt_log
+  ; Cloudflare resource
+  scrutiny.cloudflare)
  (preprocess
   (pps lwt_ppx ppx_yojson_conv)))

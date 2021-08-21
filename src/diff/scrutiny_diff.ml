@@ -13,6 +13,8 @@ and t =
     contents : contents
   }
 
+let is_empty x = not x.has_entry
+
 let empty = { has_entry = true; contents = Lines [] }
 
 let of_lines xs =

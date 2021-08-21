@@ -14,6 +14,9 @@ type change =
   | `Add
   ]
 
+(** Determine if this diff has no changes. *)
+val is_empty : t -> bool
+
 (** An empty diff. *)
 val empty : t
 
