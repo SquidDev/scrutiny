@@ -24,7 +24,7 @@ let watch_journal ~switch ~unit_name =
   in
   let rec read_journal () =
     if Journal.next journal then (
-      let message = Journal.get_data_exn journal "MESSAGE" in
+      let message = Journal.get_data_exn journal "MESSAGE" |> String.trim in
       (if this_unit unit_fields then
        let log : ('a, unit) Logs.msgf = fun f -> f ~header:unit_name "%s" message in
        match Journal.get_data journal "PRIORITY" with

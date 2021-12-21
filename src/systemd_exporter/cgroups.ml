@@ -82,7 +82,7 @@ let get_memory_current cgroup t =
 
 let get_memory_anon cgroup t =
   use ~subsystem:"unified" ~stat:"memory.stat" cgroup t @@ fun x ->
-  match find_field ~field:"anon" x |> CCOpt.flat_map int_of_string_opt with
+  match find_field ~field:"anon" x |> CCOption.flat_map int_of_string_opt with
   | None ->
       Log.warn (fun f -> f "Error parsing memory usage for %a (contents is %S)" Fpath.pp cgroup x);
       None
@@ -90,7 +90,7 @@ let get_memory_anon cgroup t =
 
 let get_cpu cgroup t =
   use ~subsystem:"unified" ~stat:"cpu.stat" cgroup t @@ fun x ->
-  match find_field ~field:"usage_usec" x |> CCOpt.flat_map int_of_string_opt with
+  match find_field ~field:"usage_usec" x |> CCOption.flat_map int_of_string_opt with
   | None ->
       Log.warn (fun f -> f "Error parsing cpu usage for %a (contents is %S)" Fpath.pp cgroup x);
       None

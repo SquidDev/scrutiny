@@ -27,7 +27,7 @@
     cohttp
     cohttp-lwt
     cohttp-lwt-unix
-    (containers (>= 3.0.1))
+    (containers (>= 3.6))
     ctypes
     digestif
     fmt
