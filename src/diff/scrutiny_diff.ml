@@ -8,13 +8,12 @@ type contents =
   | Lines of (change * string) list
   | Object of (string * t) list
 
-and t =
-  { has_entry : bool;
-    contents : contents
-  }
+and t = {
+  has_entry : bool;
+  contents : contents;
+}
 
 let is_empty x = not x.has_entry
-
 let empty = { has_entry = true; contents = Lines [] }
 
 let of_lines xs =
@@ -67,11 +66,11 @@ let rec pp_child ~full out = function
 let pp ?(full = false) out = Format.fprintf out "@[<v>%a@]" (pp_child ~full)
 
 module Structure = struct
-  type 'a row =
-    { name : string;
-      diff : 'a -> 'a -> t;
-      basic : change -> 'a -> t
-    }
+  type 'a row = {
+    name : string;
+    diff : 'a -> 'a -> t;
+    basic : change -> 'a -> t;
+  }
 
   let row ~name ~pp ?(eq = ( = )) getter =
     let diff x y =

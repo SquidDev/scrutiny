@@ -10,38 +10,33 @@ module type BasicValue = sig
   type t
 
   val digest : t -> string
-
   val yojson_of_t : t -> Yojson.Safe.t
-
   val t_of_yojson : Yojson.Safe.t -> t
 end
 
 module Remote = struct
-  type t =
-    { host : string;
-      tunnel_path : string;
-      sudo_pw : string option
-    }
+  type t = {
+    host : string;
+    tunnel_path : string;
+    sudo_pw : string option;
+  }
 
   let make ?sudo_pw ?(tunnel_path = "scrutiny-infra-tunnel") host = { host; tunnel_path; sudo_pw }
 end
 
 type change =
   | Correct
-  | NeedsChange of
-      { diff : Scrutiny_diff.t;
-        apply : unit -> (unit, string) result Lwt.t
-      }
+  | NeedsChange of {
+      diff : Scrutiny_diff.t;
+      apply : unit -> (unit, string) result Lwt.t;
+    }
 
 module type EdgeOptions = sig
   type t
 
   val default : t
-
   val union : t -> t -> t
-
   val yojson_of_t : t -> Yojson.Safe.t
-
   val t_of_yojson : Yojson.Safe.t -> t
 end
 
@@ -50,16 +45,13 @@ module type Resource = sig
 
   module Key : sig
     include BasicValue
-
     include Hashtbl.HashedType with type t := t
   end
 
   module EdgeOptions : EdgeOptions
-
   module Value : BasicValue
 
   val pp : Key.t Fmt.t
-
   val apply : Key.t -> Value.t -> EdgeOptions.t -> (change, string) result Lwt.t
 end
 
@@ -86,14 +78,14 @@ type machine =
   | Local
   | Remote of Remote.t
 
-type ('key, 'value, 'options) resource =
-  { resource : ('key, 'value, 'options) Resource.t;
-    key : 'key;
-    dependencies : boxed_key list;
-    value : ('value Lwt.t, 'options) action;
-    user : user;
-    machine : machine
-  }
+type ('key, 'value, 'options) resource = {
+  resource : ('key, 'value, 'options) Resource.t;
+  key : 'key;
+  dependencies : boxed_key list;
+  value : ('value Lwt.t, 'options) action;
+  user : user;
+  machine : machine;
+}
 
 and ('result, 'kind) key =
   | Resource : ('key, 'value, 'options) resource -> (unit, [ `Resource ]) key
@@ -107,10 +99,10 @@ and ('value, 'options) action =
 and boxed_key = BKey : ('result, 'kind) key -> boxed_key
 
 module Action = struct
-  type ('value, 'options) main_action =
-    { edges : boxed_key list;
-      term : ('value, 'options) action
-    }
+  type ('value, 'options) main_action = {
+    edges : boxed_key list;
+    term : ('value, 'options) action;
+  }
 
   type ('value, 'options) t =
     (module EdgeOptions with type t = 'options) -> ('value, 'options) main_action
@@ -133,11 +125,11 @@ end
 module Rules = struct
   type rules = boxed_key list
 
-  type context =
-    { rules : rules;
-      user : user;
-      machine : machine
-    }
+  type context = {
+    rules : rules;
+    user : user;
+    machine : machine;
+  }
 
   type ('ctx, 'a) t = context -> 'a * rules
 
@@ -153,12 +145,13 @@ module Rules = struct
     let value = value () (module R.EdgeOptions) in
     let key =
       Resource
-        { resource;
+        {
+          resource;
           key;
           value = value.term;
           dependencies = value.edges;
           user = context.user;
-          machine = context.machine
+          machine = context.machine;
         }
     in
     (key, BKey key :: context.rules)

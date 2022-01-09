@@ -9,22 +9,23 @@ let hash_file contents =
 
 (** The concrete "derived" file state. *)
 module FileState = struct
-  type t =
-    { user : User.t;
-      group : User.t;
-      perms : int;
-      contents : string;
-      make_dirs : bool
-    }
+  type t = {
+    user : User.t;
+    group : User.t;
+    perms : int;
+    contents : string;
+    make_dirs : bool;
+  }
   [@@deriving yojson]
 
   let yojson_of_t_hashed ({ user; group; perms; contents; make_dirs } : t) : Yojson.Safe.t =
     `Assoc
-      [ ("user", User.yojson_of_t user);
+      [
+        ("user", User.yojson_of_t user);
         ("group", User.yojson_of_t group);
         ("perms", `Int perms);
         ("contents", `String (hash_file contents));
-        ("make_dirs", `Bool make_dirs)
+        ("make_dirs", `Bool make_dirs);
       ]
 
   let digest x = Yojson.Safe.to_string (yojson_of_t_hashed x)
@@ -39,22 +40,24 @@ module File = struct
 
   let pp out x = Fmt.fmt "File %a" out Fpath.pp x
 
-  type partial_state =
-    { file_mod : File_mod.t;
-      contents : string
-    }
+  type partial_state = {
+    file_mod : File_mod.t;
+    contents : string;
+  }
 
   let rows : partial_state Scrutiny_diff.Structure.row list =
     let open Scrutiny_diff.Structure in
     List.map (map (fun x -> x.file_mod)) File_mod.rows
-    @ [ { name = "contents";
+    @ [
+        {
+          name = "contents";
           diff = (fun x y -> Scrutiny_diff.of_diff ~old:x.contents ~new_:y.contents);
           basic =
             (fun change x ->
               String.split_on_char '\n' x.contents
               |> List.map (fun l -> (change, l))
-              |> Scrutiny_diff.of_lines)
-        }
+              |> Scrutiny_diff.of_lines);
+        };
       ]
 
   let get_current_state path =
@@ -106,8 +109,9 @@ module File = struct
     | Ok current, Ok target ->
         let change =
           Infra.NeedsChange
-            { diff = Scrutiny_diff.Structure.compare rows current (Some target);
-              apply = (fun () -> do_apply ~path current target)
+            {
+              diff = Scrutiny_diff.Structure.compare rows current (Some target);
+              apply = (fun () -> do_apply ~path current target);
             }
         in
         Lwt.return_ok change
@@ -120,13 +124,13 @@ let file_module =
        and type EdgeOptions.t = unit
        and type Value.t = FileState.t)
 
-type file_state = FileState.t =
-  { user : User.t;
-    group : User.t;
-    perms : int;
-    contents : string;
-    make_dirs : bool
-  }
+type file_state = FileState.t = {
+  user : User.t;
+  group : User.t;
+  perms : int;
+  contents : string;
+  make_dirs : bool;
+}
 
 let file path (action : unit -> (FileState.t Lwt.t, unit) Infra.Action.t) =
   Infra.Rules.resource file_module path action

@@ -1,17 +1,16 @@
 open Lwt.Infix
 open Lwt.Syntax
-
 module Log = (val Logs.src_log (Logs.Src.create __MODULE__))
 
-type t =
-  { type_ : string;
-    name : string;
-    content : string;
-    proxied : bool;
-    ttl : int;
-    priority : int option;
-    data : Yojson.Safe.t option
-  }
+type t = {
+  type_ : string;
+  name : string;
+  content : string;
+  proxied : bool;
+  ttl : int;
+  priority : int option;
+  data : Yojson.Safe.t option;
+}
 
 let pp_json fmt = function
   | None -> ()
@@ -23,13 +22,9 @@ let mk ?priority ?(proxied = false) ~ttl ~name ?data type_ content =
   { type_; name; content; proxied; ttl; priority; data }
 
 let txt ?(ttl = 1) ~name content = mk ~ttl ~name "TXT" content
-
 let a ?(ttl = 1) ?(proxied = false) ~name content = mk ~ttl ~proxied ~name "A" content
-
 let aaaa ?(ttl = 1) ?(proxied = false) ~name content = mk ~ttl ~proxied ~name "AAAA" content
-
 let cname ?(ttl = 1) ?(proxied = false) ~name content = mk ~ttl ~proxied ~name "CNAME" content
-
 let mx ?(ttl = 1) ?(priority = 10) ~name content = mk ~ttl ~name ~priority "MX" content
 
 let caa ?(ttl = 1) ~name content =
@@ -51,8 +46,9 @@ module Updates = struct
   let update ~dryrun ~auth ~zone spec record =
     Log.warn (fun f -> f "Updating record %a => %a" Api_dns_record.pp record pp spec);
     let diff () =
-      [ (`Remove, Format.asprintf "%a" Api_dns_record.pp_short record);
-        (`Add, Format.asprintf "%a" pp spec)
+      [
+        (`Remove, Format.asprintf "%a" Api_dns_record.pp_short record);
+        (`Add, Format.asprintf "%a" pp spec);
       ]
     in
     if dryrun then Lwt.return (true, diff ())

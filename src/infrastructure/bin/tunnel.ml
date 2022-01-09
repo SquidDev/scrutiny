@@ -2,9 +2,7 @@ open struct
   (* Needed to ensure these aren't removed from the binary. *)
 
   let _ = Scrutiny_infrastructure_resources.File_resource.file
-
   let _ = Scrutiny_infrastructure_resources.Service_resource.service
-
   let _ = Scrutiny_infrastructure_resources.Directory_resource.directory
 end
 

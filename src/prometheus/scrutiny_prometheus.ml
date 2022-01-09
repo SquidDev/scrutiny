@@ -1,10 +1,9 @@
 open Prometheus
 
-let failf fmt = Fmt.kstrf failwith fmt
+let failf fmt = Fmt.kstr failwith fmt
 
 module TextFormat_0_0_4 = struct
   let re_unquoted_escapes = Re.compile @@ Re.set "\\\n"
-
   let re_quoted_escapes = Re.compile @@ Re.set "\"\\\n"
 
   let quote g =
@@ -21,9 +20,7 @@ module TextFormat_0_0_4 = struct
     | Histogram -> Fmt.string f "histogram"
 
   let output_unquoted f s = Fmt.string f @@ Re.replace re_unquoted_escapes ~f:quote s
-
   let output_quoted f s = Fmt.string f @@ Re.replace re_quoted_escapes ~f:quote s
-
   let float_fmt f = Format.fprintf f "%.16g"
 
   let output_value f v =
@@ -50,7 +47,7 @@ module TextFormat_0_0_4 = struct
       match bucket with
       | None -> (label_names, label_values)
       | Some (label_name, label_value) ->
-          let label_value_str = Fmt.strf "%a" output_value label_value in
+          let label_value_str = Fmt.str "%a" output_value label_value in
           (label_name :: label_names, label_value_str :: label_values)
     in
     Fmt.pf f "%a%s%a %a@." MetricName.pp base ext (output_labels ~label_names) label_values
@@ -70,9 +67,7 @@ end
 
 module Runtime = struct
   let current = ref (Gc.quick_stat ())
-
   let update () = current := Gc.quick_stat ()
-
   let start_time = Unix.gettimeofday ()
 
   let simple_metric ~metric_type ~help name fn =
@@ -124,7 +119,8 @@ module Runtime = struct
       ~help:"Start time of the process since unix epoch in seconds."
 
   let metrics =
-    [ ocaml_gc_allocated_bytes;
+    [
+      ocaml_gc_allocated_bytes;
       ocaml_gc_major_words;
       ocaml_gc_minor_collections;
       ocaml_gc_major_collections;
@@ -132,7 +128,7 @@ module Runtime = struct
       ocaml_gc_compactions;
       ocaml_gc_top_heap_words;
       process_cpu_seconds_total;
-      process_start_time_seconds
+      process_start_time_seconds;
     ]
 end
 

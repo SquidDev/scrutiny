@@ -2,21 +2,21 @@ open Core
 
 type change =
   | ECorrect
-  | ENeedsChange of
-      { diff : Scrutiny_diff.t;
-        apply : unit -> unit Or_exn.t Lwt.t
-      }
+  | ENeedsChange of {
+      diff : Scrutiny_diff.t;
+      apply : unit -> unit Or_exn.t Lwt.t;
+    }
 
-type t =
-  { apply :
-      'key 'value 'options.
-      user:user ->
-      ('key, 'value, 'options) Resource.t ->
-      'key ->
-      'value ->
-      'options ->
-      change Or_exn.t Lwt.t
-  }
+type t = {
+  apply :
+    'key 'value 'options.
+    user:user ->
+    ('key, 'value, 'options) Resource.t ->
+    'key ->
+    'value ->
+    'options ->
+    change Or_exn.t Lwt.t;
+}
 
 module LocalExecutor = struct
   let apply_basic (type key value option) (resource : (key, value, option) Resource.t) key value

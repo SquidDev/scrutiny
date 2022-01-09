@@ -1,7 +1,6 @@
 module Infra = Scrutiny_infrastructure
 module Journal = Scrutiny_systemd.Journal
 module Systemd = Scrutiny_systemd.Manager
-
 module Log = (val Logs.src_log (Logs.Src.create __MODULE__) : Logs.LOG)
 
 let unit_fields = [ "USER_UNIT"; "UNIT"; "_SYSTEMD_USER_UNIT"; "_SYSTEMD_UNIT" ]
@@ -43,14 +42,13 @@ let watch_journal ~switch ~unit_name =
   Lwt.async watch_journal
 
 module ServiceName = struct
-  type t =
-    { name : string;
-      scope : [ `System | `User ]
-    }
+  type t = {
+    name : string;
+    scope : [ `System | `User ];
+  }
   [@@deriving yojson]
 
   let hash = Hashtbl.hash
-
   let equal = ( = )
 
   let digest { name; scope } =
@@ -62,21 +60,21 @@ module ServiceName = struct
     name ^ "@" ^ scope
 end
 
-type service_state =
-  { enabled : bool;
-    running : bool;
-    monitor : int
-  }
+type service_state = {
+  enabled : bool;
+  running : bool;
+  monitor : int;
+}
 
 let service_state ?(enabled = false) ?(running = false) ?(monitor = 0) () =
   { enabled; running; monitor }
 
 module ServiceState = struct
-  type t = service_state =
-    { enabled : bool;
-      running : bool;
-      monitor : int
-    }
+  type t = service_state = {
+    enabled : bool;
+    running : bool;
+    monitor : int;
+  }
   [@@deriving yojson]
 
   let digest { enabled; running; monitor } =
@@ -164,8 +162,9 @@ module Service = struct
           let diff =
             let open Scrutiny_diff in
             structure
-              [ ("enabled", of_line ~old:current_unit_state ~new_:target_unit_state);
-                ("active", of_line ~old:current_state ~new_:target_state)
+              [
+                ("enabled", of_line ~old:current_unit_state ~new_:target_unit_state);
+                ("active", of_line ~old:current_state ~new_:target_state);
               ]
           in
 

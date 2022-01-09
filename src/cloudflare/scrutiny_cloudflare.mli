@@ -25,22 +25,22 @@ end
 module DnsRecord : sig
   include Id
 
-  type t =
-    { id : id;
-      type_ : string;  (** The type of this record (e.g. [A], [MX])*)
-      name : string;  (** The domain name of this record (e.g. [example.com]). *)
-      content : string;  (** The contents of this record (e.g. [127.0.0.1])*)
-      proxiable : bool;  (** Whether this record {i can} be proxied through Cloudflare. *)
-      proxied : bool;  (** Whether this record is proxied through Cloudflare. *)
-      ttl : int;  (** The TTL of this record. *)
-      locked : bool;  (** Whether this record can be edited. *)
-      zone_id : Zone.id;  (** The zone this record belongs to. *)
-      zone_name : string;  (** The name of the zone this record belongs to. *)
-      created_on : string;  (** When this record was created. *)
-      modified_on : string;  (** When this record was modified. *)
-      data : Yojson.Safe.t option;  (** Additional information about this record. *)
-      priority : int option  (** The priority of this record (only set for [MX] records).*)
-    }
+  type t = {
+    id : id;
+    type_ : string;  (** The type of this record (e.g. [A], [MX])*)
+    name : string;  (** The domain name of this record (e.g. [example.com]). *)
+    content : string;  (** The contents of this record (e.g. [127.0.0.1])*)
+    proxiable : bool;  (** Whether this record {i can} be proxied through Cloudflare. *)
+    proxied : bool;  (** Whether this record is proxied through Cloudflare. *)
+    ttl : int;  (** The TTL of this record. *)
+    locked : bool;  (** Whether this record can be edited. *)
+    zone_id : Zone.id;  (** The zone this record belongs to. *)
+    zone_name : string;  (** The name of the zone this record belongs to. *)
+    created_on : string;  (** When this record was created. *)
+    modified_on : string;  (** When this record was modified. *)
+    data : Yojson.Safe.t option;  (** Additional information about this record. *)
+    priority : int option;  (** The priority of this record (only set for [MX] records).*)
+  }
 
   (** List all records in a zone. Returns [None] on failure. *)
   val list : auth:auth -> zone:Zone.id -> t list option Lwt.t

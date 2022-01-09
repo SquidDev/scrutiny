@@ -1,10 +1,10 @@
 open Scrutiny_infrastructure
 
-type dir_state =
-  { user : User.t;
-    group : User.t;
-    perms : Unix.file_perm
-  }
+type dir_state = {
+  user : User.t;
+  group : User.t;
+  perms : Unix.file_perm;
+}
 
 (** Ensure a directory exists. *)
 val directory :

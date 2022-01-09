@@ -60,15 +60,15 @@ module Service : sig
 end
 
 (** The state of a unit in systemd. *)
-type unit_state = private
-  { id : string;
-    description : string;
-    load_state : string;
-    active_state : string;
-    sub_state : string;
-    following : string;
-    unit_path : Unit.t
-  }
+type unit_state = private {
+  id : string;
+  description : string;
+  load_state : string;
+  active_state : string;
+  sub_state : string;
+  following : string;
+  unit_path : Unit.t;
+}
 
 (** Construct a systemd manager from a dbus connection. *)
 val of_bus : OBus_bus.t -> t

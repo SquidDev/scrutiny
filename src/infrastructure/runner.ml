@@ -4,7 +4,6 @@ module RemoteTbl = Hashtbl.Make (struct
   type t = Remote.t
 
   let hash = Hashtbl.hash
-
   let equal = ( == )
 end)
 
@@ -12,12 +11,12 @@ type state =
   | Pending of (bool, unit) result Lwt.t
   | Finished of (bool, unit) result
 
-type t =
-  { keys : state KeyTbl.t;
-    key_done : unit -> unit;
-    executors : Executor.t Or_exn.t Lwt.t RemoteTbl.t;
-    switch : Lwt_switch.t option
-  }
+type t = {
+  keys : state KeyTbl.t;
+  key_done : unit -> unit;
+  executors : Executor.t Or_exn.t Lwt.t RemoteTbl.t;
+  switch : Lwt_switch.t option;
+}
 
 (** Evaluate an action, assuming all dependencies have been built.
 
@@ -61,7 +60,7 @@ let get_executor ~store:{ executors; switch; _ } bkey =
 
 (** Evaluate a rule, assuming all dependencies have been built. *)
 let eval_rule ~dry_run ~store bkey =
-  let (BKey (Resource { resource; key; value; user; dependencies = _ })) = bkey in
+  let (BKey (Resource { resource; key; value; user; _ })) = bkey in
   let module R = (val resource) in
   let logger = Logs.src_log (Logs.Src.create (Format.asprintf "%a" R.pp key)) in
   let module Log = (val logger) in
@@ -100,7 +99,7 @@ let eval_rule ~dry_run ~store bkey =
   in
   Lwt.return (Result.map snd result)
 
-let rec build_rule ~dry_run ~store bkey resolve =
+let build_rule ~dry_run ~store bkey resolve =
   let (BKey (Resource { dependencies; _ })) = bkey in
   let rec eval_deps = function
     | [] -> Lwt.return_ok ()
@@ -131,7 +130,7 @@ let default_progress _ = ()
 let check_graph is_present rules =
   let visited = KeyTbl.create (List.length rules) in
   let rec go stack node =
-    let (BKey (Resource { dependencies; key })) = node in
+    let (BKey (Resource { dependencies; _ })) = node in
     if KeyTbl.mem visited node then Ok ()
     else if not (is_present node) then Error "Missing node in rule list"
     else if List.memq node stack then Error "Loop in dependency graph"
@@ -170,7 +169,7 @@ let apply ?(progress = default_progress) ?switch ?(dry_run = false) (rules : Rul
         KeyTbl.to_seq keys |> Seq.map snd
         |> CCSeq.for_all (function
              | Finished (Ok _) -> true
-             | Finished (Error _) -> false)
+             | Finished (Error _) | Pending _ -> false)
       in
       if not ok then exit 1;
       Lwt.return_unit

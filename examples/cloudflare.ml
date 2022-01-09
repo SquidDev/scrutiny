@@ -1,5 +1,3 @@
-[@@@ocamlformat "break-string-literals=never"]
-
 open Scrutiny_cloudflare
 
 let auth : auth =
@@ -11,8 +9,9 @@ let auth : auth =
 let site, records =
   let open DnsRecord.Spec in
   ( "github.com",
-    [ a ~name:"github.com" "140.82.121.3";
-      mx ~priority:10 ~name:"github.com" "alt4.aspmx.l.google.com"
+    [
+      a ~name:"github.com" "140.82.121.3";
+      mx ~priority:10 ~name:"github.com" "alt4.aspmx.l.google.com";
     ] )
 
 let () =

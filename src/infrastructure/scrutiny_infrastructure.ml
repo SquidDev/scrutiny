@@ -36,10 +36,11 @@ let main rules =
       let open Progress.Line in
       let open Progress.Color in
       list
-        [ spinner ~color:(ansi (`bright `green)) ();
+        [
+          spinner ~color:(ansi (`bright `green)) ();
           bar ~color:(ansi (`bright `cyan)) ~style:`UTF8 total;
           parens (elapsed ());
-          brackets (count_to total)
+          brackets (count_to total);
         ]
     in
     Progress.with_reporter (bar ~total:(List.length rules)) @@ fun progress ->

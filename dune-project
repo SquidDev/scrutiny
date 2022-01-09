@@ -11,7 +11,7 @@
 
 (package
   (name scrutiny)
-  (synopsis "Bits and bobs for wrangling my server. ")
+  (synopsis "Bits and bobs for wrangling my server.")
   (description "A home grown infrastructure management and monitoring toolkit, because I'm silly.")
   (depends
     (ocaml (>= 4.11))

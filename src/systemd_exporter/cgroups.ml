@@ -1,17 +1,16 @@
 (** A terrible cgroups implementation. *)
 
 open Lwt.Infix
-
 module Log = (val Logs.src_log (Logs.Src.create "scrutiny.cgroups"))
 
 type kind =
   | Unified
   | V2
 
-type t =
-  { kind : kind;
-    path : Fpath.t
-  }
+type t = {
+  kind : kind;
+  path : Fpath.t;
+}
 
 let get path =
   if Sys.file_exists Fpath.(path / "unified" |> to_string) then Ok { kind = Unified; path }

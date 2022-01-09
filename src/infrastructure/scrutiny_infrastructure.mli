@@ -27,10 +27,10 @@ end
 (** A change which will be applied to a resource. *)
 type change =
   | Correct  (** This resource is in the correct state and no changes need be made.*)
-  | NeedsChange of
-      { diff : Scrutiny_diff.t;
-        apply : unit -> (unit, string) result Lwt.t
-      }
+  | NeedsChange of {
+      diff : Scrutiny_diff.t;
+      apply : unit -> (unit, string) result Lwt.t;
+    }
       (** This resource is not in the correct state. Contains a diff from the current to target
           state, and a function which will apply those changes. *)
 
@@ -53,7 +53,6 @@ module type EdgeOptions = sig
   val union : t -> t -> t
 
   val yojson_of_t : t -> Yojson.Safe.t
-
   val t_of_yojson : Yojson.Safe.t -> t
 end
 
@@ -63,7 +62,6 @@ module type Resource = sig
   (** The key for this term. *)
   module Key : sig
     include BasicValue
-
     include Hashtbl.HashedType with type t := t
   end
 
@@ -103,7 +101,6 @@ module Action : sig
   type ('value, 'options) t
 
   val ( let+ ) : ('a, 'options) t -> ('a -> 'b) -> ('b, 'options) t
-
   val ( and+ ) : ('a, 'options) t -> ('b, 'options) t -> ('a * 'b, 'options) t
 
   (** State that this action (and thus resource) is required for this one to run. This adds an edge
@@ -119,7 +116,6 @@ module Rules : sig
   type ('ctx, 'res) t
 
   val ( let* ) : ('ctx, 'a) t -> ('a -> ('ctx, 'b) t) -> ('ctx, 'b) t
-
   val pure : 'a -> ('ctx, 'a) t
 
   (** Register a resource in this rule set. *)
@@ -143,21 +139,17 @@ end
 
 module Unit : sig
   include BasicValue with type t = unit
-
   include Hashtbl.HashedType with type t := t
-
   include EdgeOptions with type t := t
 end
 
 module String : sig
   include BasicValue with type t = string
-
   include Hashtbl.HashedType with type t := t
 end
 
 module Path : sig
   include BasicValue with type t = Fpath.t
-
   include Hashtbl.HashedType with type t := t
 end
 

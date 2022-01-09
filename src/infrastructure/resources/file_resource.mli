@@ -1,12 +1,12 @@
 open Scrutiny_infrastructure
 
-type file_state =
-  { user : User.t;
-    group : User.t;
-    perms : Unix.file_perm;
-    contents : string;
-    make_dirs : bool
-  }
+type file_state = {
+  user : User.t;
+  group : User.t;
+  perms : Unix.file_perm;
+  contents : string;
+  make_dirs : bool;
+}
 
 (** Ensure a file exists with specific content. *)
 val file :

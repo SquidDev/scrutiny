@@ -8,18 +8,17 @@ let unix_err ~msg x =
   raise (Unix.Unix_error (error, error_msg, msg))
 
 let check ~msg x = if x >= 0 then x else unix_err ~msg (-x)
-
 let check_ ~msg x = if x >= 0 then () else unix_err ~msg (-x)
 
 module C = Constants.Journal
 module V = Values.Journal
 
-type t =
-  { journal : V.sd_journal;
-    data : unit ptr ptr;
-    data_size : Unsigned.Size_t.t ptr;
-    mutable fd : Lwt_unix.file_descr option
-  }
+type t = {
+  journal : V.sd_journal;
+  data : unit ptr ptr;
+  data_size : Unsigned.Size_t.t ptr;
+  mutable fd : Lwt_unix.file_descr option;
+}
 
 type flags = LocalOnly
 
@@ -36,7 +35,6 @@ let open_ ?(flags = [ LocalOnly ]) () =
   { journal = !@journal; data; data_size; fd = None }
 
 let close { journal; _ } = V.sd_journal_close journal
-
 let no_timeout = Unsigned.UInt64.of_int (-1)
 
 type journal_change =
@@ -112,13 +110,14 @@ let get_data j field =
 
 let level_strings =
   let open Constants.Syslog in
-  [ (log_alert, Alert);
+  [
+    (log_alert, Alert);
     (log_crit, Crit);
     (log_err, Error);
     (log_warning, Warning);
     (log_notice, Notice);
     (log_info, Info);
-    (log_debug, Debug)
+    (log_debug, Debug);
   ]
   |> List.to_seq
   |> Seq.map (fun (k, v) -> (string_of_int k, v))

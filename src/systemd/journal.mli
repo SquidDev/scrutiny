@@ -1,5 +1,4 @@
 type t
-
 type flags = LocalOnly
 
 type journal_change =

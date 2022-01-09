@@ -4,10 +4,10 @@ type id = string [@@deriving yojson]
 
 let pp_id = Format.pp_print_string
 
-type t =
-  { id : id;
-    name : string
-  }
+type t = {
+  id : id;
+  name : string;
+}
 [@@deriving yojson] [@@yojson.allow_extra_fields]
 
 let find ~auth name =

@@ -2,18 +2,15 @@
    diffs. *)
 
 module Slice = struct
-  type 'a t =
-    { array : 'a array;
-      start : int;
-      length : int
-    }
+  type 'a t = {
+    array : 'a array;
+    start : int;
+    length : int;
+  }
 
   let of_array array = { array; start = 0; length = Array.length array }
-
   let of_list xs = of_array (Array.of_list xs)
-
   let length x = x.length
-
   let slice ~from ~length { array; start; _ } = { array; start = start + from; length }
 
   let to_seq tag { array; start; length } =

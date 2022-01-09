@@ -1,14 +1,14 @@
-type manager =
-  { m_bus : OBus_bus.t;
-    m_proxy : OBus_proxy.t;
-    mutable m_listening : bool
-  }
+type manager = {
+  m_bus : OBus_bus.t;
+  m_proxy : OBus_proxy.t;
+  mutable m_listening : unit Lwt.t option;
+}
 
-type unit_file =
-  { u_manager : manager;
-    u_id : string;
-    u_proxy : OBus_proxy.t
-  }
+type unit_file = {
+  u_manager : manager;
+  u_id : string;
+  u_proxy : OBus_proxy.t;
+}
 
 module Unit = struct
   module SMap = Map.Make (String)
@@ -26,8 +26,14 @@ module Unit = struct
   let watching_job fn x =
     let manager = x.u_manager in
     let%lwt () =
-      if manager.m_listening then Lwt.return_unit
-      else Systemd_client.Org_freedesktop_systemd1_Manager.subscribe manager.m_proxy
+      match manager.m_listening with
+      | Some subscribe -> subscribe
+      | None ->
+          let listening =
+            Systemd_client.Org_freedesktop_systemd1_Manager.subscribe manager.m_proxy
+          in
+          manager.m_listening <- Some listening;
+          listening
     in
     Lwt_switch.with_switch @@ fun switch ->
     let cell = ref (IsDone SMap.empty) in
@@ -110,22 +116,21 @@ module Service = struct
   type t = unit_file
 
   let unit x = x
-
   let of_unit x = x
 
   let control_group x =
     Systemd_client.Org_freedesktop_systemd1_Service.control_group x.u_proxy |> OBus_property.get
 end
 
-type unit_state =
-  { id : string;
-    description : string;
-    load_state : string;
-    active_state : string;
-    sub_state : string;
-    following : string;
-    unit_path : Unit.t
-  }
+type unit_state = {
+  id : string;
+  description : string;
+  load_state : string;
+  active_state : string;
+  sub_state : string;
+  following : string;
+  unit_path : Unit.t;
+}
 
 let convert_unit ~manager
     ( id,
@@ -154,6 +159,6 @@ let daemon_reload x = Systemd_client.Org_freedesktop_systemd1_Manager.reload x.m
 let of_bus bus =
   let peer = OBus_peer.make ~name:"org.freedesktop.systemd1" ~connection:bus in
   let proxy = OBus_proxy.make ~peer ~path:[ "org"; "freedesktop"; "systemd1" ] in
-  { m_bus = bus; m_proxy = proxy; m_listening = false }
+  { m_bus = bus; m_proxy = proxy; m_listening = None }
 
 type t = manager

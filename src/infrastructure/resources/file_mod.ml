@@ -1,14 +1,15 @@
-type t =
-  { user : int;
-    group : int;
-    perms : int
-  }
+type t = {
+  user : int;
+  group : int;
+  perms : int;
+}
 
 let rows =
   let open Scrutiny_diff.Structure in
-  [ row ~name:"user" ~pp:string_of_int (fun x -> x.user);
+  [
+    row ~name:"user" ~pp:string_of_int (fun x -> x.user);
     row ~name:"group" ~pp:string_of_int (fun x -> x.group);
-    row ~name:"perms" ~pp:(Format.sprintf "%03o") (fun x -> x.perms)
+    row ~name:"perms" ~pp:(Format.sprintf "%03o") (fun x -> x.perms);
   ]
 
 let stat ~expected_kind ~expected_kind_str path =

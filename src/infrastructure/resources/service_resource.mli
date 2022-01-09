@@ -1,10 +1,10 @@
 open Scrutiny_infrastructure
 
-type service_state =
-  { enabled : bool;  (** This service should be enabled.*)
-    running : bool;  (** This service should be running. *)
-    monitor : int  (** Monitor this service for n seconds. *)
-  }
+type service_state = {
+  enabled : bool;  (** This service should be enabled.*)
+  running : bool;  (** This service should be running. *)
+  monitor : int;  (** Monitor this service for n seconds. *)
+}
 
 val service_state : ?enabled:bool -> ?running:bool -> ?monitor:int -> unit -> service_state
 

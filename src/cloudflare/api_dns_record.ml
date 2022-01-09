@@ -2,22 +2,22 @@ type id = string [@@deriving yojson]
 
 let pp_id = Format.pp_print_string
 
-type t =
-  { id : id;
-    type_ : string; [@key "type"]
-    name : string;
-    content : string;
-    proxiable : bool;
-    proxied : bool;
-    ttl : int;
-    locked : bool;
-    zone_id : Api_zone.id;
-    zone_name : string;
-    created_on : string;
-    modified_on : string;
-    data : Util.Json.t option; [@yojson.option]
-    priority : int option [@yojson.option]
-  }
+type t = {
+  id : id;
+  type_ : string; [@key "type"]
+  name : string;
+  content : string;
+  proxiable : bool;
+  proxied : bool;
+  ttl : int;
+  locked : bool;
+  zone_id : Api_zone.id;
+  zone_name : string;
+  created_on : string;
+  modified_on : string;
+  data : Util.Json.t option; [@yojson.option]
+  priority : int option; [@yojson.option]
+}
 [@@deriving yojson] [@@yojson.allow_extra_fields]
 
 let pp_json fmt = function
@@ -25,7 +25,6 @@ let pp_json fmt = function
   | Some x -> Format.fprintf fmt " %s" (Yojson.Safe.to_string x)
 
 let pp_short fmt r = Format.fprintf fmt "%5s %s=%S%a" r.type_ r.name r.content pp_json r.data
-
 let pp fmt r = Format.fprintf fmt "{%s} %a" r.id pp_short r
 
 let list ~auth ~zone =
@@ -40,10 +39,8 @@ let add_opt name value xs : (string * Yojson.Safe.t) list =
   | Some value -> (name, value) :: xs
 
 let body_common ~type_ ~name ~content ?proxied ?(ttl = 1) () : (string * Yojson.Safe.t) list =
-  [ ("name", `String name);
-    ("type", `String type_);
-    ("content", `String content);
-    ("ttl", `Int ttl)
+  [
+    ("name", `String name); ("type", `String type_); ("content", `String content); ("ttl", `Int ttl);
   ]
   |> add_opt "proxied" (Option.map (fun x -> `Bool x) proxied)
 

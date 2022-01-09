@@ -1,11 +1,11 @@
 module Infra = Scrutiny_infrastructure
 
 module DirState = struct
-  type t =
-    { user : User.t;
-      group : User.t;
-      perms : int
-    }
+  type t = {
+    user : User.t;
+    group : User.t;
+    perms : int;
+  }
   [@@deriving yojson]
 
   let digest x = Yojson.Safe.to_string (yojson_of_t x)
@@ -43,8 +43,7 @@ module Dir = struct
     | Error e, _ | _, Error e -> Lwt.return_error e
     | Ok (Some current), Ok target
       when current.user = target.user && current.group = target.group
-           && current.perms = target.perms ->
-        Lwt.return_ok Infra.Correct
+           && current.perms = target.perms -> Lwt.return_ok Infra.Correct
     | Ok _, Ok target ->
         let diff = Scrutiny_diff.Structure.compare File_mod.rows None (Some target) in
         let apply () =
@@ -64,11 +63,11 @@ let dir_module =
        and type EdgeOptions.t = unit
        and type Value.t = DirState.t)
 
-type dir_state = DirState.t =
-  { user : User.t;
-    group : User.t;
-    perms : Unix.file_perm
-  }
+type dir_state = DirState.t = {
+  user : User.t;
+  group : User.t;
+  perms : Unix.file_perm;
+}
 
 let directory path (action : unit -> (DirState.t Lwt.t, unit) Infra.Action.t) =
   Infra.Rules.resource dir_module path action

@@ -1,7 +1,6 @@
 open Core
 module ITbl = Hashtbl.Make (CCInt)
 module STbl = Hashtbl.Make (CCString)
-
 module Log = (val Logs.src_log (Logs.Src.create __MODULE__))
 
 type user =
@@ -22,23 +21,24 @@ module Diff = struct
 end
 
 module AppliedResource = struct
-  type ('key, 'value, 'options) t =
-    { resource : ('key, 'value, 'options) Resource.t;
-      key : 'key;
-      value : 'value;
-      options : 'options;
-      user : user
-    }
+  type ('key, 'value, 'options) t = {
+    resource : ('key, 'value, 'options) Resource.t;
+    key : 'key;
+    value : 'value;
+    options : 'options;
+    user : user;
+  }
 
   type boxed = Boxed : ('key, 'value, 'options) t -> boxed
 
   let boxed_of_yojson : Yojson.Safe.t -> boxed = function
     | `Assoc
-        [ ("resource", `String resource);
+        [
+          ("resource", `String resource);
           ("key", key);
           ("value", value);
           ("options", options);
-          ("user", user)
+          ("user", user);
         ] ->
         let (Resource.Boxed resource) =
           match SMap.find_opt resource !Resource.resources with
@@ -47,22 +47,24 @@ module AppliedResource = struct
         in
         let module R = (val resource) in
         Boxed
-          { resource;
+          {
+            resource;
             key = R.Key.t_of_yojson key;
             value = R.Value.t_of_yojson value;
             options = R.EdgeOptions.t_of_yojson options;
-            user = user_of_yojson user
+            user = user_of_yojson user;
           }
     | _ -> raise (Yojson.Json_error "Malformed AppliedResource")
 
   let yojson_of_boxed (Boxed { resource; key; value; options; user }) : Yojson.Safe.t =
     let module R = (val resource) in
     `Assoc
-      [ ("resource", `String R.id);
+      [
+        ("resource", `String R.id);
         ("key", R.Key.yojson_of_t key);
         ("value", R.Value.yojson_of_t value);
         ("options", R.EdgeOptions.yojson_of_t options);
-        ("user", yojson_of_user user)
+        ("user", yojson_of_user user);
       ]
 end
 
@@ -75,12 +77,12 @@ module Logging = struct
     | Debug
   [@@deriving yojson]
 
-  type record =
-    { level : level;
-      src : string;
-      message : string;
-      header : string option
-    }
+  type record = {
+    level : level;
+    src : string;
+    message : string;
+    header : string option;
+  }
   [@@deriving yojson]
 
   let reporter send =
@@ -100,26 +102,26 @@ module Logging = struct
 end
 
 type to_server =
-  | Check of
-      { id : int;
-        resource : AppliedResource.boxed
-      }
+  | Check of {
+      id : int;
+      resource : AppliedResource.boxed;
+    }
   | Apply of { id : int }
 [@@deriving yojson]
 
 type to_client =
-  | Init of
-      { message : string;
-        version : string
-      }
-  | CheckResult of
-      { id : int;
-        result : [ `Correct | `NeedsChange of Diff.t ] Or_exn.t
-      }
-  | ApplyResult of
-      { id : int;
-        result : unit Or_exn.t
-      }
+  | Init of {
+      message : string;
+      version : string;
+    }
+  | CheckResult of {
+      id : int;
+      result : [ `Correct | `NeedsChange of Diff.t ] Or_exn.t;
+    }
+  | ApplyResult of {
+      id : int;
+      result : unit Or_exn.t;
+    }
   | Log of Logging.record
 [@@deriving yojson]
 

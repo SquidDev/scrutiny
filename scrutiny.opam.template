@@ -1,0 +1,3 @@
+pin-depends: [
+  ["obus.dev" "git+https://github.com/ocaml-community/obus#0c5ec967da943d75d11b6c65460c306e37993b23"]
+]

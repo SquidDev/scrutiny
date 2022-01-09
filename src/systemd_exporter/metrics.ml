@@ -31,13 +31,13 @@ module State = struct
     | Inactive -> "inactive"
 end
 
-type unit_state =
-  { mutable active : bool;
-    mutable state : State.t;
-    mutable memory_current : float option;
-    mutable memory_anon : float option;
-    mutable cpu : float option
-  }
+type unit_state = {
+  mutable active : bool;
+  mutable state : State.t;
+  mutable memory_current : float option;
+  mutable memory_anon : float option;
+  mutable cpu : float option;
+}
 
 let units = ref SMap.empty
 
@@ -58,10 +58,11 @@ module Metrics = struct
 
   let unit_metric ~help name fn : t =
     let info =
-      { MetricInfo.name = MetricName.v name;
+      {
+        MetricInfo.name = MetricName.v name;
         help;
         metric_type = Gauge;
-        label_names = [ LabelName.v "name" ]
+        label_names = [ LabelName.v "name" ];
       }
     in
     let collect () =
@@ -96,10 +97,11 @@ module Metrics = struct
       way. *)
   let unit_state : t =
     let info =
-      { MetricInfo.name = MetricName.v "systemd_unit_state";
+      {
+        MetricInfo.name = MetricName.v "systemd_unit_state";
         help = "Systemd unit";
         metric_type = Gauge;
-        label_names = [ LabelName.v "name"; LabelName.v "state" ]
+        label_names = [ LabelName.v "name"; LabelName.v "state" ];
       }
     in
     let collect () =
@@ -121,10 +123,10 @@ let () =
   let add (info, collector) = Prometheus.CollectorRegistry.(register default) info collector in
   List.iter add Metrics.all
 
-type t =
-  { busses : OBus_bus.t list;
-    cgroups : Cgroups.t
-  }
+type t = {
+  busses : OBus_bus.t list;
+  cgroups : Cgroups.t;
+}
 
 let collect t =
   SMap.iter (fun _ x -> x.active <- false) !units;
@@ -160,6 +162,7 @@ let collect t =
 
 let default_options () =
   let+ session = OBus_bus.session () and+ system = OBus_bus.system () in
-  { busses = [ session; system ];
-    cgroups = Fpath.v "/sys/fs/cgroup/" |> Cgroups.get |> Result.fold ~ok:Fun.id ~error:failwith
+  {
+    busses = [ session; system ];
+    cgroups = Fpath.v "/sys/fs/cgroup/" |> Cgroups.get |> Result.fold ~ok:Fun.id ~error:failwith;
   }

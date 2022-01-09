@@ -1,7 +1,6 @@
 open Lwt.Syntax
 open Httpaf
 open Httpaf_lwt_unix
-
 module Log = (val Logs.src_log (Logs.Src.create "systemd_exporter"))
 
 let respond_error reqd status =
@@ -47,8 +46,9 @@ let main ~busses ~cgroup ~addr ~port =
     match busses with
     | [] ->
         Lwt.all
-          [ catching ~tag:"System bus" (fun () -> OBus_bus.system ());
-            catching ~tag:"Session bus" (fun () -> OBus_bus.session ())
+          [
+            catching ~tag:"System bus" (fun () -> OBus_bus.system ());
+            catching ~tag:"Session bus" (fun () -> OBus_bus.session ());
           ]
     | busses ->
         Lwt_list.map_p
@@ -57,8 +57,9 @@ let main ~busses ~cgroup ~addr ~port =
           busses
   in
   let config =
-    { Metrics.busses;
-      cgroups = Fpath.v cgroup |> Cgroups.get |> Result.fold ~ok:Fun.id ~error:failwith
+    {
+      Metrics.busses;
+      cgroups = Fpath.v cgroup |> Cgroups.get |> Result.fold ~ok:Fun.id ~error:failwith;
     }
   in
   let* _server =

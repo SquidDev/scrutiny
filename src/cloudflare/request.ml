@@ -1,5 +1,4 @@
 module Client = Cohttp_lwt_unix.Client
-
 module Log = (val Logs.src_log (Logs.Src.create __MODULE__))
 
 type auth =
@@ -14,20 +13,20 @@ let headers ~auth =
       let headers = Cohttp.Header.add headers "X-Auth-Email" email in
       Cohttp.Header.add headers "X-Auth-Key" tok
 
-type message =
-  { code : int;
-    message : string
-  }
+type message = {
+  code : int;
+  message : string;
+}
 [@@deriving of_yojson] [@@yojson.allow_extra_fields]
 
 let pp_msg out { code; message } = Format.fprintf out "Error in request [%d]: %s" code message
 
-type 'a response =
-  { success : bool;
-    errors : message list;
-    messages : message list;
-    result : 'a option
-  }
+type 'a response = {
+  success : bool;
+  errors : message list;
+  messages : message list;
+  result : 'a option;
+}
 [@@deriving of_yojson] [@@yojson.allow_extra_fields]
 
 let mk_query path query =

@@ -2,10 +2,10 @@ module Infra = Scrutiny_infrastructure
 module CF = Scrutiny_cloudflare
 
 module State = struct
-  type t =
-    { spec : CF.DnsRecord.Spec.t list;
-      auth : CF.auth
-    }
+  type t = {
+    spec : CF.DnsRecord.Spec.t list;
+    auth : CF.auth;
+  }
 
   let yojson_of_t x : Yojson.Safe.t = `String (Marshal.to_string x [])
 
