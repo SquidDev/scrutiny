@@ -39,6 +39,8 @@
     logs
     lwt
     lwt_ppx
+    menhir
+    obus
     ppx_yojson_conv
     ppx_yojson_conv_lib
     (progress (>= 0.2.0))
@@ -50,11 +52,4 @@
     tls
     uri
     yojson
-
-    ; vendor/obus
-    lwt_log
-    lwt_react
-    menhir
-    ppxlib
-    xmlm
     ))

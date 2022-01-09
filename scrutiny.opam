@@ -30,6 +30,8 @@ depends: [
   "logs"
   "lwt"
   "lwt_ppx"
+  "menhir"
+  "obus"
   "ppx_yojson_conv"
   "ppx_yojson_conv_lib"
   "progress" {>= "0.2.0"}
@@ -41,11 +43,6 @@ depends: [
   "tls"
   "uri"
   "yojson"
-  "lwt_log"
-  "lwt_react"
-  "menhir"
-  "ppxlib"
-  "xmlm"
   "odoc" {with-doc}
 ]
 build: [

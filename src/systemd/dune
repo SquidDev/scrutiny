@@ -2,7 +2,6 @@
  (name scrutiny_systemd)
  (public_name scrutiny.systemd)
  (synopsis "Utilities for interacting with systemd and journald.")
- (flags :standard -cclib -lsystemd)
  (libraries ctypes integers scrutiny.errno obus obus.internals lwt lwt.unix
    result react)
  (preprocess
@@ -12,7 +11,8 @@
  (foreign_stubs
   (language c)
   (names ffi_generated)
-  (flags :standard -Wno-incompatible-pointer-types)))
+  (flags :standard -Wno-incompatible-pointer-types))
+ (c_library_flags (-lsystemd)))
 
 (library
  (name scrutiny_systemd_bindings)
