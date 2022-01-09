@@ -5,10 +5,14 @@
    scrutiny_infrastructure scrutiny_infrastructure_resources))
 
 (rule
- (target tunnel.min.exe)
- (deps tunnel.exe)
+ (target tunnel.strip.exe)
  (action
-  (run upx -o %{target} %{deps})))
+  (run strip -o %{target} %{dep:tunnel.exe})))
+
+(rule
+ (target tunnel.min.exe)
+ (action
+  (run upx -o %{target} %{dep:tunnel.strip.exe})))
 
 (install
  (section bin)
