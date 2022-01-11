@@ -11,14 +11,13 @@
 
 (package
   (name scrutiny)
-  (synopsis "Bits and bobs for wrangling my server.")
+  (synopsis "Bits and bobs for wrangling my server")
   (description "A home grown infrastructure management and monitoring toolkit, because I'm silly.")
   (depends
     (ocaml (>= 4.11))
 
     ;; Build-time
-    dune ; While a build-tool, dune shouldn't be build-time only
-
+    dune
     (ocamlformat :dev)
     (ocaml-lsp-server :dev)
 
