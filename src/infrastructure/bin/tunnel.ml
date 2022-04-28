@@ -12,7 +12,7 @@ let () =
   let tunnel_cmd =
     let doc = "Starts a tunnel reading commands from stdin. Should not be run manually" in
     let term = Scrutiny_infrastructure.run_tunnel in
-    (Term.(const term $ const ()), Term.info "scrutiny-infra-tunnel" ~doc)
+    Cmd.v (Cmd.info "scrutiny-infra-tunnel" ~doc) Term.(const term $ const ())
   in
 
-  Term.exit @@ Term.eval tunnel_cmd
+  Cmd.eval tunnel_cmd |> exit

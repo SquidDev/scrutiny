@@ -46,7 +46,7 @@ let main rules =
     Progress.with_reporter (bar ~total:(List.length rules)) @@ fun progress ->
     Lwt_main.run (apply_ ~progress ~dry_run rules)
   in
-  Term.exit @@ Term.eval (term, Term.info Sys.executable_name ~doc)
+  Cmd.v (Cmd.info Sys.executable_name ~doc) term |> Cmd.eval |> exit
 
 let run_tunnel () =
   Lwt_main.run (Lwt_switch.with_switch (fun switch -> Tunnel.run_tunnel ~switch ()))

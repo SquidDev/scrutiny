@@ -1,3 +1,0 @@
-[submodule "vendor/obus"]
-	path = vendor/obus
-	url = https://github.com/SquidDev/obus.git

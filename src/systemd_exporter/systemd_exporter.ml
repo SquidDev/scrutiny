@@ -96,6 +96,5 @@ let () =
     Lwt_main.run (main ~busses ~cgroup ~addr ~port)
   in
 
-  let info = Cmdliner.Term.info Sys.executable_name in
-
-  Cmdliner.Term.eval (term, info) |> Cmdliner.Term.exit
+  let open Cmdliner in
+  Cmd.v (Cmd.info Sys.executable_name) term |> Cmd.eval |> exit
