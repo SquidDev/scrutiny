@@ -1,5 +1,12 @@
 (executable
  (name main)
  (modules main)
- (libraries logs logs.fmt lwt lwt.unix fmt.tty scrutiny.infrastructure
-   scrutiny.infrastructure.resources fpath))
+ (libraries
+  fmt.tty
+  fpath
+  logs
+  logs.fmt
+  lwt
+  lwt.unix
+  scrutiny.infrastructure
+  scrutiny.infrastructure.resources))

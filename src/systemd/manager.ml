@@ -134,12 +134,7 @@ let of_bus ~sw (conn : connection) =
     | `Bus b -> Native.scrutiny_sd_bus_open_address b
   in
   let bus =
-    {
-      bus;
-      is_open = true;
-      removed_job_listeners = Lwt_dllist.create ();
-      listening = None;
-    }
+    { bus; is_open = true; removed_job_listeners = Lwt_dllist.create (); listening = None }
   in
   Lwt.async (fun () -> process bus);
   (* Cannot wait for eio! *)

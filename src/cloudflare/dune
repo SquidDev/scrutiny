@@ -2,7 +2,17 @@
  (name scrutiny_cloudflare)
  (public_name scrutiny.cloudflare)
  (synopsis "Utilities for interacting with Cloudflare's API.")
- (libraries fmt logs lwt cohttp cohttp-lwt cohttp-lwt-unix tls yojson
-   ppx_yojson_conv_lib uri scrutiny.diff)
+ (libraries
+  cohttp
+  cohttp-lwt
+  cohttp-lwt-unix
+  fmt
+  logs
+  lwt
+  ppx_yojson_conv_lib
+  scrutiny.diff
+  tls
+  uri
+  yojson)
  (preprocess
   (pps ppx_yojson_conv)))

@@ -1,4 +1,4 @@
-(lang dune 2.7)
+(lang dune 3.0)
 (implicit_transitive_deps false)
 (generate_opam_files true)
 
@@ -17,7 +17,6 @@
     (ocaml (>= 4.11))
 
     ;; Build-time
-    dune
     (ocamlformat :dev)
     (ocaml-lsp-server :dev)
 

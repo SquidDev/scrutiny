@@ -1,8 +1,14 @@
 (executable
  (name cloudflare)
  (modules cloudflare)
- (libraries logs logs.fmt lwt lwt.unix fmt.tty scrutiny.cloudflare
-   scrutiny.diff))
+ (libraries
+  fmt.tty
+  logs
+  logs.fmt
+  lwt
+  lwt.unix
+  scrutiny.cloudflare
+  scrutiny.diff))
 
 (executable
  (name journal_tail)
@@ -17,4 +23,4 @@
 (executable
  (name list_units)
  (modules list_units)
- (libraries scrutiny.systemd lwt lwt.unix containers))
+ (libraries containers lwt lwt.unix scrutiny.systemd))
