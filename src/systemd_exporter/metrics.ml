@@ -124,7 +124,7 @@ let () =
   List.iter add Metrics.all
 
 type t = {
-  busses : OBus_bus.t list;
+  busses : Scrutiny_systemd.Manager.connection list;
   cgroups : Cgroups.t;
 }
 
@@ -132,8 +132,9 @@ let collect t =
   SMap.iter (fun _ x -> x.active <- false) !units;
 
   (* For all busses and all units. *)
+  Lwt_switch.with_switch @@ fun sw ->
   Fun.flip Lwt_list.iter_p t.busses @@ fun bus ->
-  let* units = Manager.of_bus bus |> Manager.list_units in
+  let* units = Manager.of_bus ~sw bus |> Manager.list_units in
   Fun.flip Lwt_list.iter_p units @@ fun unit_info ->
   if not (CCString.suffix ~suf:".service" unit_info.id) then Lwt.return_unit
   else
@@ -141,7 +142,7 @@ let collect t =
     unit_state.active <- true;
     unit_state.state <- State.v unit_info.active_state;
 
-    let* cgroup = Manager.Service.of_unit unit_info.unit_path |> Manager.Service.control_group in
+    let* cgroup = Manager.Service.of_unit unit_info.unit |> Manager.Service.get_control_group in
     if cgroup <> "" then (
       let cgroup =
         if String.length cgroup > 0 && cgroup.[0] = '/' then CCString.drop 1 cgroup else cgroup
@@ -159,10 +160,3 @@ let collect t =
       unit_state.memory_anon <- None;
       unit_state.cpu <- None;
       Lwt.return_unit)
-
-let default_options () =
-  let+ session = OBus_bus.session () and+ system = OBus_bus.system () in
-  {
-    busses = [ session; system ];
-    cgroups = Fpath.v "/sys/fs/cgroup/" |> Cgroups.get |> Result.fold ~ok:Fun.id ~error:failwith;
-  }

@@ -1,41 +1,47 @@
-open Ctypes
-module Constants = Systemd_bindings.Constants (Ffi_generated_types)
-module Values = Systemd_bindings.Values (Ffi_generated)
+module Native = struct
+  type sd_journal
 
-let unix_err ~msg x =
-  let error = Scrutiny_errno.convert x in
-  let error_msg = Unix.error_message error in
-  raise (Unix.Unix_error (error, error_msg, msg))
+  external sd_journal_open : int -> sd_journal = "scrutiny_sd_journal_open"
+  external sd_journal_close : sd_journal -> unit = "scrutiny_sd_journal_close"
+  external sd_journal_get_fd : sd_journal -> Unix.file_descr = "scrutiny_sd_journal_get_fd"
+  external sd_journal_process : sd_journal -> int = "scrutiny_sd_journal_process"
+  external sd_journal_next : sd_journal -> bool = "scrutiny_sd_journal_next"
+  external sd_journal_seek_tail : sd_journal -> unit = "scrutiny_sd_journal_seek_tail"
 
-let check ~msg x = if x >= 0 then x else unix_err ~msg (-x)
-let check_ ~msg x = if x >= 0 then () else unix_err ~msg (-x)
+  external sd_journal_get_data : sd_journal -> string -> string option
+    = "scrutiny_sd_journal_get_data"
 
-module C = Constants.Journal
-module V = Values.Journal
+  external sd_journal_get_realtime_usec : sd_journal -> float
+    = "scrutiny_sd_journal_get_realtime_usec"
+
+  external sd_journal_sendv_array : string array -> unit = "scrutiny_sd_journal_sendv_array"
+  external sd_journal_sendv_list : string list -> unit = "scrutiny_sd_journal_sendv_list"
+end
 
 type t = {
-  journal : V.sd_journal;
-  data : unit ptr ptr;
-  data_size : Unsigned.Size_t.t ptr;
+  journal : Native.sd_journal;
+  mutable is_open : bool;
   mutable fd : Lwt_unix.file_descr option;
 }
 
 type flags = LocalOnly
 
 let int_of_flag = function
-  | LocalOnly -> C.sd_journal_local_only
+  | LocalOnly -> 1 lsl 0
 
-let open_ ?(flags = [ LocalOnly ]) () =
+let close x =
+  if not x.is_open then failwith "close: Already closed";
+  x.is_open <- false;
+  x.fd <- None;
+  Native.sd_journal_close x.journal
+
+let open_ ?sw ?(flags = [ LocalOnly ]) () =
+  Lwt_switch.check sw;
   let flags = List.fold_left (fun x y -> x lor int_of_flag y) 0 flags in
-  let journal = allocate_n ~count:1 V.sd_journal in
-  V.sd_journal_open journal flags |> check_ ~msg:"sd_journal_open";
-
-  let data = allocate_n ~count:1 (ptr void) in
-  let data_size = allocate_n ~count:1 size_t in
-  { journal = !@journal; data; data_size; fd = None }
-
-let close { journal; _ } = V.sd_journal_close journal
-let no_timeout = Unsigned.UInt64.of_int (-1)
+  let journal = Native.sd_journal_open flags in
+  let journal = { journal; is_open = true; fd = None } in
+  Lwt_switch.add_hook sw (fun () -> close journal; Lwt.return_unit);
+  journal
 
 type journal_change =
   | Nop
@@ -44,6 +50,7 @@ type journal_change =
   | Unknown of int
 
 type level =
+  | Emerg
   | Alert
   | Crit
   | Error
@@ -52,72 +59,35 @@ type level =
   | Info
   | Debug
 
-let convert_wait ret =
-  if ret = C.sd_journal_nop then Nop
-  else if ret = C.sd_journal_append then Append
-  else if ret = C.sd_journal_invalidate then Invalidate
-  else Unknown ret
+let convert_wait = function
+  | 0 -> Nop
+  | 1 -> Append
+  | 2 -> Invalidate
+  | x -> Unknown x
 
-let wait ?(timeout = no_timeout) { journal; _ } =
-  V.sd_journal_wait journal timeout |> check ~msg:"sd_journal_wait" |> convert_wait
-
-let wait_async journal =
+let wait journal =
   let fd =
     match journal.fd with
     | Some fd -> fd
     | None ->
-        let fd = V.sd_journal_get_fd journal.journal |> check ~msg:"sd_journal_get_fd" in
-        let fd : Unix.file_descr = Obj.magic fd (* Dodgy but safe*) in
-        let fd = Lwt_unix.of_unix_file_descr fd in
+        let fd =
+          Native.sd_journal_get_fd journal.journal |> Lwt_unix.of_unix_file_descr ~blocking:false
+        in
         journal.fd <- Some fd;
         fd
   in
   let open Lwt.Infix in
-  Lwt_unix.wait_read fd >|= fun () ->
-  V.sd_journal_process journal.journal |> check ~msg:"sd_journal_process" |> convert_wait
+  Lwt_unix.wait_read fd >|= fun () -> Native.sd_journal_process journal.journal |> convert_wait
 
-let next { journal; _ } =
-  let ret = V.sd_journal_next journal |> check ~msg:"sd_journal_next" in
-  ret <> 0
-
-let seek_tail { journal; _ } = V.sd_journal_seek_tail journal |> check_ ~msg:"sd_journal_seek_tail"
-
-let get_data_raw_exn { journal; data; data_size; _ } field =
-  V.sd_journal_get_data journal field data data_size |> check_ ~msg:"sd_journal_get_data";
-  let ptr = !@data |> from_voidp char in
-  let offset = String.length field + 1 in
-  let length = Unsigned.Size_t.to_int !@data_size - offset in
-  (ptr +@ offset, length)
-
-let get_data_exn j field =
-  let ptr, length = get_data_raw_exn j field in
-  string_from_ptr ~length ptr
-
-let get_data_raw { journal; data; data_size; _ } field =
-  let ret = V.sd_journal_get_data journal field data data_size in
-  if ret >= 0 then
-    let ptr = !@data |> from_voidp char in
-    let offset = String.length field + 1 in
-    let length = Unsigned.Size_t.to_int !@data_size - offset in
-    Some (ptr +@ offset, length)
-  else
-    match Scrutiny_errno.convert (-ret) with
-    | Unix.ENOENT -> None
-    | error -> raise (Unix.Unix_error (error, Unix.error_message error, "sd_journal_get_data"))
-
-let get_data j field =
-  get_data_raw j field |> Option.map @@ fun (ptr, length) -> string_from_ptr ~length ptr
+let next { journal; _ } = Native.sd_journal_next journal
+let seek_tail { journal; _ } = Native.sd_journal_seek_tail journal
+let get_data_exn { journal; _ } field = Native.sd_journal_get_data journal field |> Option.get
+let get_data { journal; _ } field = Native.sd_journal_get_data journal field
+let get_realtime { journal; _ } = Native.sd_journal_get_realtime_usec journal
 
 let level_strings =
-  let open Constants.Syslog in
   [
-    (log_alert, Alert);
-    (log_crit, Crit);
-    (log_err, Error);
-    (log_warning, Warning);
-    (log_notice, Notice);
-    (log_info, Info);
-    (log_debug, Debug);
+    (0, Emerg); (1, Alert); (2, Crit); (3, Error); (4, Warning); (5, Notice); (6, Info); (7, Debug);
   ]
   |> List.to_seq
   |> Seq.map (fun (k, v) -> (string_of_int k, v))
@@ -129,22 +99,8 @@ let get_level j : level =
   | Some x -> Hashtbl.find_opt level_strings x |> Option.value ~default:(Error : level)
 
 module Write = struct
-  let write_ msgs =
-    let count = List.length msgs in
-    let items = Array.make count null in
-    let msg_buffer = allocate_n ~count Constants.Readv.iovec in
-    List.iteri
-      (fun i msg ->
-        let entry = !@(msg_buffer +@ i) in
-        let ptr = CArray.(of_string msg |> start) |> to_voidp in
-        (* No clue if needed, but make sure to keep this around in memory. *)
-        items.(i) <- ptr;
-        setf entry Constants.Readv.iov_base ptr;
-        setf entry Constants.Readv.iov_len (String.length msg |> Unsigned.Size_t.of_int))
-      msgs;
-    V.sd_journal_sendv msg_buffer count |> check_ ~msg:"sd_journal_sendv";
-
-    Sys.opaque_identity items |> ignore
+  let write_fields = Native.sd_journal_sendv_list
+  let write_fields_array = Native.sd_journal_sendv_array
 
   let prepare_extra = function
     | [] -> []
@@ -162,16 +118,17 @@ module Write = struct
   let def_tag = if Array.length Sys.argv = 0 then Sys.executable_name else Sys.argv.(0)
 
   let map_priority = function
-    | Alert -> "PRIORITY=" ^ string_of_int Constants.Syslog.log_alert
-    | Crit -> "PRIORITY=" ^ string_of_int Constants.Syslog.log_crit
-    | Error -> "PRIORITY=" ^ string_of_int Constants.Syslog.log_err
-    | Warning -> "PRIORITY=" ^ string_of_int Constants.Syslog.log_warning
-    | Notice -> "PRIORITY=" ^ string_of_int Constants.Syslog.log_notice
-    | Info -> "PRIORITY=" ^ string_of_int Constants.Syslog.log_info
-    | Debug -> "PRIORITY=" ^ string_of_int Constants.Syslog.log_debug
+    | Emerg -> "PRIORITY=0"
+    | Alert -> "PRIORITY=1"
+    | Crit -> "PRIORITY=2"
+    | Error -> "PRIORITY=3"
+    | Warning -> "PRIORITY=4"
+    | Notice -> "PRIORITY=5"
+    | Info -> "PRIORITY=6"
+    | Debug -> "PRIORITY=7"
 
   let write ?(tag = def_tag) ?(level : level = Error) ?(extra = []) message =
-    write_
+    write_fields
     @@ map_priority level :: ("SYSLOG_IDENTIFIER=" ^ tag) :: ("MESSAGE=" ^ message)
        :: prepare_extra extra
 end

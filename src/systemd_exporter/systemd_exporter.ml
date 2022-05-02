@@ -42,20 +42,6 @@ let main ~busses ~cgroup ~addr ~port =
         Printexc.raise_with_backtrace e bt)
   in
   let listen_address = Unix.(ADDR_INET (inet_addr_of_string addr, port)) in
-  let* busses =
-    match busses with
-    | [] ->
-        Lwt.all
-          [
-            catching ~tag:"System bus" (fun () -> OBus_bus.system ());
-            catching ~tag:"Session bus" (fun () -> OBus_bus.session ());
-          ]
-    | busses ->
-        Lwt_list.map_p
-          (fun addr ->
-            catching ~tag:addr @@ fun () -> OBus_address.of_string addr |> OBus_bus.of_addresses)
-          busses
-  in
   let config =
     {
       Metrics.busses;
@@ -83,7 +69,30 @@ let () =
       value & opt string "127.0.0.1" & info ~doc:"Address to expose /metrics on." [ "a"; "addr" ]
     and$ cgroup =
       value & opt dir "/sys/fs/cgroup/" & info ~doc:"CGroup root." [ "C"; "cgroup-root" ]
-    and$ busses = value & opt_all string [] & info ~doc:"DBus busses to listen to." [ "bus" ] in
+    and$ system_bus =
+      value & flag
+      & info ~doc:"Monitor the system bus. Defaults to true if no other busses are supplied."
+          [ "system-bus" ]
+    and$ user_busses =
+      value
+      & opt_all ~vopt:None (some string) []
+      & info
+          ~doc:
+            "User busses to listen to. If given without an argument, the current user's bus is \
+             listened to."
+          [ "user-bus" ]
+    and$ busses =
+      value & opt_all string []
+      & info ~doc:"Full bus connection strings to listen to." [ "bus-path" ]
+    in
+    let busses : Scrutiny_systemd.Manager.connection list =
+      match (system_bus, user_busses, busses) with
+      | false, [], [] -> [ `System ]
+      | _, _, _ ->
+          (if system_bus then [ `System ] else [])
+          @ List.map (Option.fold ~none:`User ~some:(fun x -> `Other_user x)) user_busses
+          @ List.map (fun x -> `Bus x) busses
+    in
 
     Printexc.record_backtrace true;
     Logs.set_level (Some (if verbose then Debug else Info));

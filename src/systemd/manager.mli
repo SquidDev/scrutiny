@@ -30,19 +30,19 @@ module Unit : sig
   val disable : t -> unit Lwt.t
 
   (** Get whether the current configuration file has been loaded. *)
-  val load_state : t -> string Lwt.t
+  val get_load_state : t -> string Lwt.t
 
   (** Get whether the unit is active or not.
 
       Will be one of ["active"], ["reloading"], ["inactive"], ["failed"], ["activating"],
       ["deactivating"]. *)
-  val active_state : t -> string Lwt.t
+  val get_active_state : t -> string Lwt.t
 
   (** Get whether the unit is enabled or not.
 
       Will be one of ["enabled"], ["enabled-runtime"], ["linked"], ["linked-runtime"], ["masked"],
       ["masked-runtime"], ["static"], ["disabled"] or ["invalid"]. *)
-  val unit_file_state : t -> string Lwt.t
+  val get_unit_file_state : t -> string Lwt.t
 end
 
 module Service : sig
@@ -56,7 +56,7 @@ module Service : sig
   val of_unit : Unit.t -> t
 
   (** Find the control group of this service. *)
-  val control_group : t -> string Lwt.t
+  val get_control_group : t -> string Lwt.t
 end
 
 (** The state of a unit in systemd. *)
@@ -67,11 +67,18 @@ type unit_state = private {
   active_state : string;
   sub_state : string;
   following : string;
-  unit_path : Unit.t;
+  unit : Unit.t;
 }
 
+type connection =
+  [ `User
+  | `System
+  | `Other_user of string
+  | `Bus of string
+  ]
+
 (** Construct a systemd manager from a dbus connection. *)
-val of_bus : OBus_bus.t -> t
+val of_bus : sw:Lwt_switch.t -> connection -> t
 
 (** List all available units. *)
 val list_units : t -> unit_state list Lwt.t

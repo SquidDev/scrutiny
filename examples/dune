@@ -17,4 +17,4 @@
 (executable
  (name list_units)
  (modules list_units)
- (libraries scrutiny.systemd lwt lwt.unix obus obus.internals containers))
+ (libraries scrutiny.systemd lwt lwt.unix containers))

@@ -1,5 +1,5 @@
 type t
-type flags = LocalOnly
+type flags = LocalOnly  (** SD_JOURNAL_LOCAL_ONLY *)
 
 type journal_change =
   | Nop
@@ -9,25 +9,27 @@ type journal_change =
 
 (** The level of log entries. *)
 type level =
-  | Alert
-  | Crit
-  | Error
-  | Warning
-  | Notice
-  | Info
-  | Debug
+  | Emerg  (** LOG_EMERG *)
+  | Alert  (** LOG_ALERT *)
+  | Crit  (** LOG_CRIT *)
+  | Error  (** LOG_ERROR *)
+  | Warning  (** LOG_WARNING *)
+  | Notice  (** LOG_NOTICE *)
+  | Info  (** LOG_INFO *)
+  | Debug  (** LOG_DEBUG *)
 
 (** Open the current journal, defaulting to the local one. *)
-val open_ : ?flags:flags list -> unit -> t
+val open_ : ?sw:Lwt_switch.t -> ?flags:flags list -> unit -> t
 
-(** Close a journal. *)
+(** Close a journal.
+
+    You typically will not need to do this, as the switch will handle it automatically. *)
 val close : t -> unit
 
-(** Wait for a new journal event. *)
-val wait : ?timeout:Unsigned.uint64 -> t -> journal_change
+(** Wait for a new journal event.
 
-(** Wait for a new journal event. *)
-val wait_async : t -> journal_change Lwt.t
+    {b Note:} if the journal is closed while we're waiting here, the promise may not complete. *)
+val wait : t -> journal_change Lwt.t
 
 (** Read the next journal event, returning false when reaching the end of the DB *)
 val next : t -> bool
@@ -35,17 +37,14 @@ val next : t -> bool
 (** Skip to the end of the journal. *)
 val seek_tail : t -> unit
 
-(** Get a field in the current journal entry as a raw pointer and length. *)
-val get_data_raw_exn : t -> string -> (char, [ `C ]) Ctypes.pointer * int
-
 (** Get a field in the current journal entry. *)
 val get_data_exn : t -> string -> string
 
-(** Get a field in the current journal entry as a raw pointer and length. *)
-val get_data_raw : t -> string -> ((char, [ `C ]) Ctypes.pointer * int) option
-
 (** Get a field in the current journal entry. *)
 val get_data : t -> string -> string option
+
+(** Get the realtime timestamp for the current journal entry. *)
+val get_realtime : t -> float
 
 (** Get the level of the current journal entry. Defaults to {!Error} if no level is specified. *)
 val get_level : t -> level
@@ -57,5 +56,8 @@ module Write : sig
   val write : ?tag:string -> ?level:level -> ?extra:(string * string) list -> string -> unit
 
   (** Write to the syslog with a given set of fields. *)
-  val write_ : string list -> unit
+  val write_fields : string list -> unit
+
+  (** Write to the syslog with a given set of fields. *)
+  val write_fields_array : string array -> unit
 end

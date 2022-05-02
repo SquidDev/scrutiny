@@ -35,7 +35,7 @@ let watch_journal ~switch ~unit_name =
   in
   let rec watch_journal () =
     if Option.fold ~none:true ~some:Lwt_switch.is_on switch then (
-      let%lwt _ = Lwt.choose [ Journal.wait_async journal; wait ] in
+      let%lwt _ = Lwt.choose [ Journal.wait journal; wait ] in
       read_journal (); watch_journal ())
     else (Journal.close journal; Lwt.return_unit)
   in
@@ -111,10 +111,6 @@ module Service = struct
     | `User -> Format.fprintf out "User service %s" name
     | `System -> Format.fprintf out "System service %s" name
 
-  let get_bus = function
-    | `System -> OBus_bus.system ()
-    | `User -> OBus_bus.session ()
-
   let get_desired_state (change : ServiceChange.t) target =
     match (change, target.running) with
     | `None, true -> Ok ("active", Systemd.Unit.restart)
@@ -134,7 +130,7 @@ module Service = struct
          state. *)
       Log.info (fun f -> f "Watching %s for %d seconds" name target.monitor);
       let%lwt () = Lwt_unix.sleep (float_of_int target.monitor) in
-      let%lwt current_state = Systemd.Unit.active_state unit_file in
+      let%lwt current_state = Systemd.Unit.get_active_state unit_file in
       let target_state = if target.running then "active" else "inactive" in
       if current_state = target_state then (
         Log.info (fun f -> f "Service is still %s" current_state);
@@ -149,12 +145,17 @@ module Service = struct
     | Ok (target_state, target_state_apply) ->
         let target_unit_state, target_unit_state_apply = get_desired_unit_state target in
 
-        let%lwt bus = get_bus scope in
-        let systemd = Systemd.of_bus bus in
+        Lwt_switch.with_switch @@ fun sw ->
+        let bus =
+          match scope with
+          | `System -> `System
+          | `User -> `User
+        in
+        let systemd = Systemd.of_bus ~sw bus in
 
         let%lwt unit_file = Systemd.load_unit systemd name in
-        let%lwt current_state = Systemd.Unit.active_state unit_file
-        and current_unit_state = Systemd.Unit.unit_file_state unit_file in
+        let%lwt current_state = Systemd.Unit.get_active_state unit_file
+        and current_unit_state = Systemd.Unit.get_unit_file_state unit_file in
 
         if current_state = target_state && current_unit_state = target_unit_state then
           Lwt.return_ok Infra.Correct
@@ -193,8 +194,6 @@ module Service = struct
           in
           Lwt.return_ok (Infra.NeedsChange { diff; apply })
 end
-
-let () = Lwt_log_adapter.setup ()
 
 let service_module =
   Infra.Resource.make

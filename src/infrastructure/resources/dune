@@ -17,9 +17,7 @@
   digestif
   jingoo
   ; Service resource
-  obus
   scrutiny.systemd
-  lwt_log
   ; Cloudflare resource
   scrutiny.cloudflare)
  (preprocess
