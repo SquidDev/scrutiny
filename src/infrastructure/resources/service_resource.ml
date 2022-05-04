@@ -99,6 +99,24 @@ module ServiceChange = struct
     | (`None | `Reload), `Reload | `Reload, `None -> `Reload
 end
 
+(** Store the bus in a global state. It's not nice, but the only thing we can really do. *)
+let get_bus : [ `System | `User ] -> Systemd.t =
+  let sw = Lwt_switch.create () in
+  let user_bus = ref None in
+  let system_bus = ref None in
+
+  let get_bus ref kind =
+    match !ref with
+    | Some x -> x
+    | None ->
+        let manager = Systemd.of_bus ~sw kind in
+        ref := Some manager;
+        manager
+  in
+  function
+  | `User -> get_bus user_bus `User
+  | `System -> get_bus system_bus `System
+
 module Service = struct
   module Key = ServiceName
   module Value = ServiceState
@@ -145,14 +163,7 @@ module Service = struct
     | Ok (target_state, target_state_apply) ->
         let target_unit_state, target_unit_state_apply = get_desired_unit_state target in
 
-        Lwt_switch.with_switch @@ fun sw ->
-        let bus =
-          match scope with
-          | `System -> `System
-          | `User -> `User
-        in
-        let systemd = Systemd.of_bus ~sw bus in
-
+        let systemd = get_bus scope in
         let%lwt unit_file = Systemd.load_unit systemd name in
         let%lwt current_state = Systemd.Unit.get_active_state unit_file
         and current_unit_state = Systemd.Unit.get_unit_file_state unit_file in
@@ -172,8 +183,8 @@ module Service = struct
           (* TODO: Refactor this somewhere which isn't /quite/ so ugly? There's a lot of captured
              state though, which makes this a little more awkward. *)
           let apply () =
-            Lwt_switch.with_switch @@ fun switch ->
-            watch_journal ~switch:(Some switch) ~unit_name:name;
+            Lwt_switch.with_switch @@ fun sw ->
+            watch_journal ~switch:(Some sw) ~unit_name:name;
 
             let%lwt () = Systemd.daemon_reload systemd in
             let%lwt apply_state =
