@@ -13,10 +13,11 @@
   result
   scrutiny.diff
   yojson
-  ; Cache
-  sqlite3
   ; Command line
   cmdliner
-  progress)
+  mtime
+  mtime.clock.os
+  progress
+  terminal)
  (preprocess
   (pps lwt_ppx ppx_yojson_conv)))

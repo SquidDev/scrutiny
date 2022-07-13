@@ -11,9 +11,16 @@ type state =
   | Pending of (bool, unit) result Lwt.t
   | Finished of (bool, unit) result
 
+type progress = {
+  key_start : boxed_key -> unit;
+  key_done : boxed_key -> unit;
+}
+
+let default_progress = { key_start = (fun _ -> ()); key_done = (fun _ -> ()) }
+
 type t = {
   keys : state KeyTbl.t;
-  key_done : unit -> unit;
+  progress : progress;
   executors : Executor.t Or_exn.t Lwt.t RemoteTbl.t;
   switch : Lwt_switch.t option;
 }
@@ -116,16 +123,14 @@ let build_rule ~dry_run ~store bkey resolve =
 
   let%lwt result =
     match%lwt eval_deps dependencies with
-    | Ok () -> eval_rule ~dry_run ~store bkey
+    | Ok () -> store.progress.key_start bkey; eval_rule ~dry_run ~store bkey
     | Error () -> Lwt.return_error ()
   in
 
   KeyTbl.replace store.keys bkey (Finished result);
   Lwt.wakeup_later resolve result;
-  store.key_done ();
+  store.progress.key_done bkey;
   Lwt.return_unit
-
-let default_progress _ = ()
 
 let check_graph is_present rules =
   let visited = KeyTbl.create (List.length rules) in
@@ -147,9 +152,8 @@ let check_graph is_present rules =
   go_all [] rules
 
 let apply ?(progress = default_progress) ?switch ?(dry_run = false) (rules : Rules.rules) =
-  let key_done () = progress 1 in
   let keys = KeyTbl.create (List.length rules) in
-  let store = { keys; key_done; executors = RemoteTbl.create 2; switch } in
+  let store = { keys; progress; executors = RemoteTbl.create 2; switch } in
 
   let tasks =
     List.rev_map

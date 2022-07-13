@@ -146,7 +146,7 @@ let make_user_lookup () =
   in
   get_user_id
 
-let wait_for_init (proc : Lwt_process.process) =
+let wait_for_init (proc : Lwt_process.process_full) =
   let rec gobble () =
     match%lwt Lwt_io.read_line proc#stdout with
     | input -> (
@@ -162,6 +162,15 @@ let wait_for_init (proc : Lwt_process.process) =
   in
   try%lwt Lwt_unix.with_timeout 5.0 gobble
   with Lwt_unix.Timeout -> Lwt.return_error "Tunnel failed after a timeout."
+
+let rec drain ?switch (proc : Lwt_process.process_full) =
+  match%lwt Lwt_io.read_line proc#stderr with
+  | exception End_of_file -> Lwt.return_unit
+  | exception Lwt_io.Channel_closed _ -> Lwt.return_unit
+  | line ->
+      Log.err (fun e -> e "%s" line);
+      if Option.fold ~none:true ~some:Lwt_switch.is_on switch then drain ?switch proc
+      else Lwt.return_unit
 
 let rec run_tunnel ?switch () : unit Lwt.t =
   let pending_actions = ITbl.create 32 in
@@ -288,10 +297,11 @@ and executor ?switch ~input ~output () : Executor.t =
 
 and executor_of_cmd ?switch setup cmd =
   Lwt_switch.check switch;
-  let proc = Lwt_process.open_process (cmd.(0), cmd) in
+  let proc = Lwt_process.open_process_full (cmd.(0), cmd) in
   Lwt_switch.add_hook switch (fun () ->
       let%lwt _ = proc#close in
       Lwt.return_unit);
+  Lwt.async (fun () -> drain ?switch proc);
   match%lwt setup proc with
   | Ok () -> Lwt.return_ok (executor ?switch ~input:proc#stdout ~output:proc#stdin ())
   | Error e -> Lwt.return_error e
