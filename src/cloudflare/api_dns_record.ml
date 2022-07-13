@@ -27,8 +27,8 @@ let pp_json fmt = function
 let pp_short fmt r = Format.fprintf fmt "%5s %s=%S%a" r.type_ r.name r.content pp_json r.data
 let pp fmt r = Format.fprintf fmt "{%s} %a" r.id pp_short r
 
-let list ~auth ~zone =
-  Request.call ~auth
+let list ~client ~zone =
+  Request.call ~client
     ~query:[ ("per_page", [ "100" ]) ]
     ~parse:(list_of_yojson t_of_yojson) `GET
     (Printf.sprintf "zones/%s/dns_records" zone)
@@ -44,23 +44,26 @@ let body_common ~type_ ~name ~content ?proxied ?(ttl = 1) () : (string * Yojson.
   ]
   |> add_opt "proxied" (Option.map (fun x -> `Bool x) proxied)
 
-let add ~auth ~zone ~type_ ~name ~content ?proxied ?ttl ?priority ?data () =
+let add ~client ~zone ~type_ ~name ~content ?proxied ?ttl ?priority ?data () =
   let body =
     body_common ~type_ ~name ~content ?proxied ?ttl ()
     |> add_opt "priority" (Option.map (fun x -> `Int x) priority)
     |> add_opt "data" data
   in
-  Request.call ~auth
+  Request.call ~client
     ~body:(Yojson.Safe.to_string (`Assoc body))
     ~parse:t_of_yojson `POST
     (Printf.sprintf "zones/%s/dns_records" zone)
 
-let update ~auth ~zone ~type_ ~name ~content ?proxied ?ttl id =
+let update ~client ~zone ~type_ ~name ~content ?proxied ?ttl id =
   let body = body_common ~type_ ~name ~content ?proxied ?ttl () in
-  Request.call ~auth
+  Request.call ~client
     ~body:(Yojson.Safe.to_string (`Assoc body))
     ~parse:t_of_yojson `PUT
     (Printf.sprintf "zones/%s/dns_records/%s" zone id)
 
-let delete ~auth ~zone id =
-  Request.call ~auth ~parse:(fun _ -> ()) `DELETE (Printf.sprintf "zones/%s/dns_records/%s" zone id)
+let delete ~client ~zone id =
+  Request.call ~client
+    ~parse:(fun _ -> ())
+    `DELETE
+    (Printf.sprintf "zones/%s/dns_records/%s" zone id)

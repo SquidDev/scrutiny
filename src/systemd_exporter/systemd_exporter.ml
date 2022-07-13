@@ -3,11 +3,11 @@ open Httpaf
 open Httpaf_lwt_unix
 module Log = (val Logs.src_log (Logs.Src.create "systemd_exporter"))
 
-let respond_error reqd status =
+let respond_error reqd status reason =
   let headers = Headers.of_list [ ("connection", "close") ] in
-  Reqd.respond_with_string reqd (Response.create ~headers status) ""
+  Reqd.respond_with_string reqd (Response.create ~headers status) reason
 
-let request_handler config (_ : Unix.sockaddr) reqd =
+let request_handler config (_ : Unix.sockaddr) { Gluten.reqd; _ } =
   let request = Reqd.request reqd in
   match request with
   | { target = "/metrics"; _ } ->
@@ -20,9 +20,9 @@ let request_handler config (_ : Unix.sockaddr) reqd =
         (fun exn ->
           let bt = Printexc.get_raw_backtrace () in
           Log.err (fun f -> f "Error gathering metrics: %a" Fmt.exn_backtrace (exn, bt));
-          respond_error reqd `Internal_server_error;
+          respond_error reqd `Internal_server_error "Internal Server Error";
           Lwt.return_unit)
-  | _ -> respond_error reqd `Not_found
+  | _ -> respond_error reqd `Not_found "Not Found"
 
 let error_handler (_ : Unix.sockaddr) ?request:_ error start_response =
   let response_body = start_response Headers.empty in

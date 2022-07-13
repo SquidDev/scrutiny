@@ -10,8 +10,8 @@ type t = {
 }
 [@@deriving yojson] [@@yojson.allow_extra_fields]
 
-let find ~auth name =
-  Request.call ~auth
+let find ~client name =
+  Request.call ~client
     ~query:[ ("match", [ "any" ]); ("name", [ name ]) ]
     ~parse:(list_of_yojson t_of_yojson) `GET "zones"
   >|= function

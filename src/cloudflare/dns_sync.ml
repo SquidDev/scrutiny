@@ -32,18 +32,18 @@ let caa ?(ttl = 1) ~name content =
   Printf.sprintf "0 issue %S" content |> mk ~ttl ~name ~data "CAA"
 
 module Updates = struct
-  let delete ~dryrun ~auth ~zone record =
+  let delete ~dryrun ~client ~zone record =
     Log.warn (fun f -> f "Deleting record %a" Api_dns_record.pp record);
     let diff () = [ (`Remove, Format.asprintf "%a" Api_dns_record.pp_short record) ] in
     if dryrun then Lwt.return (true, diff ())
     else
-      Api_dns_record.delete ~auth ~zone record.id >|= function
+      Api_dns_record.delete ~client ~zone record.id >|= function
       | Some () -> (true, diff ())
       | None ->
           Log.err (fun f -> f "Error deleting record %a" Api_dns_record.pp record);
           (false, [ (`Same, Format.asprintf "%a" Api_dns_record.pp_short record) ])
 
-  let update ~dryrun ~auth ~zone spec record =
+  let update ~dryrun ~client ~zone spec record =
     Log.warn (fun f -> f "Updating record %a => %a" Api_dns_record.pp record pp spec);
     let diff () =
       [
@@ -53,7 +53,7 @@ module Updates = struct
     in
     if dryrun then Lwt.return (true, diff ())
     else
-      Api_dns_record.update ~auth ~zone ~type_:spec.type_ ~name:spec.name ~content:spec.content
+      Api_dns_record.update ~client ~zone ~type_:spec.type_ ~name:spec.name ~content:spec.content
         ~proxied:spec.proxied ~ttl:spec.ttl record.id
       >|= function
       | Some _ -> (true, diff ())
@@ -61,12 +61,12 @@ module Updates = struct
           Log.err (fun f -> f "Error updating record %a => %a" Api_dns_record.pp record pp spec);
           (false, [ (`Same, Format.asprintf "%a" Api_dns_record.pp_short record) ])
 
-  let add ~dryrun ~auth ~zone spec =
+  let add ~dryrun ~client ~zone spec =
     Log.warn (fun f -> f "Adding record %a" pp spec);
     let diff () = [ (`Add, Format.asprintf "%a" pp spec) ] in
     if dryrun then Lwt.return (true, diff ())
     else
-      Api_dns_record.add ~auth ~zone ~type_:spec.type_ ~name:spec.name ~content:spec.content
+      Api_dns_record.add ~client ~zone ~type_:spec.type_ ~name:spec.name ~content:spec.content
         ~proxied:spec.proxied ~ttl:spec.ttl ?priority:spec.priority ?data:spec.data ()
       >|= function
       | Some record ->
@@ -110,7 +110,7 @@ module Sync = struct
         let ok', ys = accumulate xs in
         (ok && ok', x @ ys)
 
-  let sync_domain ~auth ~zone ~dryrun spec records =
+  let sync_domain ~client ~zone ~dryrun spec records =
     (* Find records who have matching content and a compatible priority (the API doesn't allow us to
        change that). Those records can be updated in line. *)
     let overlap =
@@ -141,16 +141,16 @@ module Sync = struct
       | [ spec ], [ record ] when record.Api_dns_record.priority = spec.priority ->
           (* If we've got exactly one record compatible with different content then we'll update it
              instead of deleting/updating. This just makes the diff look nicer. *)
-          Updates.update ~dryrun ~auth ~zone spec record
+          Updates.update ~dryrun ~client ~zone spec record
       | _, _ -> (
           (* Otherwise there's no point trying to find the minimal set of updates. Just clobber
              everything. We bulk-delete and then bulk-insert, just to avoid any potential race
              conditions. *)
-          let* result = Lwt_list.map_p (Updates.delete ~dryrun ~auth ~zone) records in
+          let%lwt result = Lwt_list.map_p (Updates.delete ~dryrun ~client ~zone) records in
           match accumulate result with
           | false, result -> Lwt.return (false, result)
           | true, result ->
-              let+ result' = Lwt_list.map_p (Updates.add ~dryrun ~auth ~zone) spec in
+              let+ result' = Lwt_list.map_p (Updates.add ~dryrun ~client ~zone) spec in
               let ok, result' = accumulate result' in
               (ok, result @ result'))
     and+ ok', overlaps =
@@ -160,14 +160,14 @@ module Sync = struct
              if spec.ttl = record.Api_dns_record.ttl && spec.proxied = record.proxied then (
                Log.debug (fun f -> f "Nothing to do for record %a" Api_dns_record.pp record);
                Lwt.return (true, [ (`Same, Format.asprintf "%a" pp spec) ]))
-             else Updates.update ~dryrun ~auth ~zone spec record)
+             else Updates.update ~dryrun ~client ~zone spec record)
       >|= accumulate
     in
     (ok && ok', diff @ overlaps)
 
   exception Duplicate of t
 
-  let sync ?(dryrun = false) ~auth ~zone spec =
+  let sync ?(dryrun = false) ~client ~zone spec =
     match
       (* We require the invariant that there can only be one entry for any (kind, domain, content)
          pair. We allow multiple remote ones, but will remove all but the first. *)
@@ -180,7 +180,7 @@ module Sync = struct
     | exception Duplicate e ->
         Lwt.return (Error (Format.asprintf "Duplicate record %a" pp e), Scrutiny_diff.empty)
     | spec -> (
-        Api_dns_record.list ~auth ~zone >>= function
+        Api_dns_record.list ~client ~zone >>= function
         | None -> Lwt.return (Error "Cannot list features", Scrutiny_diff.empty)
         | Some records ->
             let records =
@@ -198,7 +198,7 @@ module Sync = struct
               spec records
             |> KMap.to_seq |> List.of_seq
             |> Lwt_list.map_p (fun (_, (spec, records)) ->
-                   sync_domain ~dryrun ~auth ~zone spec records)
+                   sync_domain ~dryrun ~client ~zone spec records)
             >|= fun xs ->
             let ok = List.for_all fst xs in
             let diff = List.map snd xs |> List.flatten |> Scrutiny_diff.of_lines in

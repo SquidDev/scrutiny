@@ -2,6 +2,12 @@ type auth = Request.auth =
   | Token of string
   | Email of string * string
 
+module Client = struct
+  type t = Request.client
+
+  let with_client = Request.with_client
+end
+
 module type Id = sig
   type id
 

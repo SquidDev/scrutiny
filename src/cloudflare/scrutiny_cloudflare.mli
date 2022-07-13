@@ -5,6 +5,12 @@ type auth =
   | Token of string
   | Email of string * string
 
+module Client : sig
+  type t
+
+  val with_client : auth -> (t -> 'a Lwt.t) -> 'a Lwt.t
+end
+
 (** Represents a unique ID of some resource. This signature is included in the definitions of actual
     resources. *)
 module type Id = sig
@@ -18,7 +24,7 @@ module Zone : sig
   include Id
 
   (** Find a zone. Returns [None] on failure. *)
-  val find : auth:auth -> string -> id option Lwt.t
+  val find : client:Client.t -> string -> id option Lwt.t
 end
 
 (** A single DNS record within a zone. *)
@@ -43,12 +49,12 @@ module DnsRecord : sig
   }
 
   (** List all records in a zone. Returns [None] on failure. *)
-  val list : auth:auth -> zone:Zone.id -> t list option Lwt.t
+  val list : client:Client.t -> zone:Zone.id -> t list option Lwt.t
 
   (** Create a new record, using the same fields as those defined in {!t}. Returns the created
       record, or [None] if an error occurred. *)
   val add :
-    auth:auth ->
+    client:Client.t ->
     zone:Zone.id ->
     type_:string ->
     name:string ->
@@ -63,7 +69,7 @@ module DnsRecord : sig
   (** Edit an existing record, using the same fields as those defined in {!t}. Returns the updated
       record, or [None] if an error occurred. *)
   val update :
-    auth:auth ->
+    client:Client.t ->
     zone:Zone.id ->
     type_:string ->
     name:string ->
@@ -74,7 +80,7 @@ module DnsRecord : sig
     t option Lwt.t
 
   (** Delete a record. Returns [None] if an error occurred. *)
-  val delete : auth:auth -> zone:Zone.id -> id -> unit option Lwt.t
+  val delete : client:Client.t -> zone:Zone.id -> id -> unit option Lwt.t
 
   (** A declaration of a DNS record. *)
   module Spec : sig
@@ -104,7 +110,7 @@ module DnsRecord : sig
         modified record, as a well as a result marking success. *)
     val sync :
       ?dryrun:bool ->
-      auth:auth ->
+      client:Client.t ->
       zone:Zone.id ->
       t list ->
       ((unit, string) result * Scrutiny_diff.t) Lwt.t

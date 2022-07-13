@@ -22,16 +22,11 @@
 
     ; Core
     cmdliner
-    cohttp
-    cohttp-lwt
-    cohttp-lwt-unix
     (containers (>= 3.6))
     ctypes
     digestif
     fmt
     fpath
-    httpaf
-    httpaf-lwt-unix
     integers
     jingoo
     logs
@@ -39,6 +34,7 @@
     lwt_ppx
     lwt-dllist
     menhir
+    piaf
     ppx_yojson_conv
     ppx_yojson_conv_lib
     (progress (>= 0.2.0))

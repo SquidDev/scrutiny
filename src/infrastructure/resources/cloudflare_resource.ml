@@ -26,15 +26,19 @@ module CFResource = struct
   let pp out x = Fmt.fmt "Zone %s" out x
 
   let apply ~zone ~auth ~spec () =
-    match%lwt CF.DnsRecord.Spec.sync ~dryrun:false ~auth ~zone spec with
+    match%lwt
+      CF.Client.with_client auth (fun client ->
+          CF.DnsRecord.Spec.sync ~dryrun:false ~client ~zone spec)
+    with
     | Error e, _ -> Lwt.return_error e
     | Ok (), _ -> Lwt.return_ok ()
 
   let apply zone ({ auth; spec } : State.t) () : (Infra.change, string) result Lwt.t =
-    match%lwt CF.Zone.find ~auth zone with
+    CF.Client.with_client auth @@ fun client ->
+    match%lwt CF.Zone.find ~client zone with
     | None -> Lwt.return_error "Cannot find zone"
     | Some zone -> (
-        match%lwt CF.DnsRecord.Spec.sync ~dryrun:true ~auth ~zone spec with
+        match%lwt CF.DnsRecord.Spec.sync ~dryrun:true ~client ~zone spec with
         | Error e, _ -> Lwt.return_error e
         | Ok (), diff ->
             let apply : Infra.change =
