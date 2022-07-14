@@ -1,6 +1,7 @@
 open Core
 module ITbl = Hashtbl.Make (CCInt)
 module STbl = Hashtbl.Make (CCString)
+module PTbl = Hashtbl.Make (Executor.PartialKey)
 module Log = (val Logs.src_log (Logs.Src.create __MODULE__))
 
 type user =
@@ -82,23 +83,36 @@ module Logging = struct
     src : string;
     message : string;
     header : string option;
+    key : int option; [@yojson.default None]
   }
   [@@deriving yojson]
 
-  let reporter send =
+  let reporter keys send =
     let report (type a b) src level ~over k (msg : (a, b) Logs.msgf) : b =
-      msg @@ fun ?header ?tags:_ fmt ->
+      msg @@ fun ?header ?(tags = Logs.Tag.empty) fmt ->
+      let key =
+        match Logs.Tag.find Executor.PartialKey.tag tags with
+        | None -> None
+        | Some key -> PTbl.find_opt keys key
+      in
       Format.kasprintf
         (fun message ->
-          send { header; level; src = Logs.Src.name src; message };
+          send { header; level; src = Logs.Src.name src; message; key };
           over ();
           k ())
         fmt
     in
     { Logs.report }
 
-  let log_record { level; src = _; message; header } =
-    Log.msg level (fun f -> f ?header "%s" message)
+  let log_record keys { level; src = _; message; header; key } =
+    Log.msg level (fun f ->
+        let tags = Logs.Tag.empty in
+        let tags =
+          match CCOption.bind key (ITbl.find_opt keys) with
+          | None -> tags
+          | Some key -> Logs.Tag.add Executor.PartialKey.tag key tags
+        in
+        f ~tags ?header "%s" message)
 end
 
 type to_server =
@@ -174,6 +188,7 @@ let rec drain ?switch (proc : Lwt_process.process_full) =
 
 let rec run_tunnel ?switch () : unit Lwt.t =
   let pending_actions = ITbl.create 32 in
+  let keys = PTbl.create 32 in
 
   let run_as_user = make_executor_factory ?switch () in
 
@@ -236,13 +251,15 @@ let rec run_tunnel ?switch () : unit Lwt.t =
 
   (* Set up a logging reporter. *)
   Logs.set_level ~all:true (Some Debug);
-  Logs.set_reporter (Logging.reporter (fun msg -> Lwt.async (fun () -> Log msg |> send)));
+  Logging.reporter keys (fun msg -> Lwt.async (fun () -> Log msg |> send))
+  |> Executor.wrap_logger |> Logs.set_reporter;
   run ()
 
 and executor ?switch ~input ~output () : Executor.t =
   let counter = ref 0 in
   let check_wait = ITbl.create 32 in
   let apply_wait = ITbl.create 32 in
+  let keys = ITbl.create 32 in
   Lwt_switch.check switch;
 
   let background =
@@ -253,7 +270,8 @@ and executor ?switch ~input ~output () : Executor.t =
           | Init _ -> Log.err (fun f -> f "Impossible: Additional init message")
           | CheckResult { id; result } -> Lwt.wakeup_later (ITbl.find check_wait id) result
           | ApplyResult { id; result } -> Lwt.wakeup_later (ITbl.find apply_wait id) result
-          | Log msg -> Logging.log_record msg);
+          | Log msg -> Logging.log_record keys msg
+          | exception e -> Log.err (fun f -> f "Error reading tunnel message (%a)" Fmt.exn e));
           go ()
       | exception End_of_file -> Lwt.return_unit
     in
@@ -275,14 +293,17 @@ and executor ?switch ~input ~output () : Executor.t =
   let check ~user resource key value options =
     Lwt_switch.check switch;
 
-    let resource = AppliedResource.Boxed { resource; key; value; options; user } in
+    let resource_box = AppliedResource.Boxed { resource; key; value; options; user } in
     let id = !counter in
     incr counter;
+    ITbl.replace keys id (PKey (resource, key));
 
     let wait, notify = Lwt.wait () in
     ITbl.replace check_wait id notify;
 
-    let message = Check { id; resource } |> yojson_of_to_server |> Yojson.Safe.to_string in
+    let message =
+      Check { id; resource = resource_box } |> yojson_of_to_server |> Yojson.Safe.to_string
+    in
     let%lwt () = Lwt_io.atomic (fun out -> Lwt_io.write_line out message) output in
     let%lwt result = wait in
     let result =

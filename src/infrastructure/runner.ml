@@ -1,4 +1,5 @@
 open Core
+module Log = (val Logs.src_log (Logs.Src.create __MODULE__))
 
 module RemoteTbl = Hashtbl.Make (struct
   type t = Remote.t
@@ -69,9 +70,8 @@ let get_executor ~store:{ executors; switch; _ } bkey =
 let eval_rule ~dry_run ~store bkey =
   let (BKey (Resource { resource; key; value; user; _ })) = bkey in
   let module R = (val resource) in
-  let logger = Logs.src_log (Logs.Src.create (Format.asprintf "%a" R.pp key)) in
-  let module Log = (val logger) in
   let%lwt result =
+    Executor.PartialKey.with_context (PKey (resource, key)) @@ fun () ->
     (* Attempt to evaluate the rule. This is 90% error handling and 10% actual code. Sorry! *)
     match%lwt eval_action ~resource ~store value with
     | Error () -> Lwt.return_error ()
@@ -82,10 +82,7 @@ let eval_rule ~dry_run ~store bkey =
     | Ok (value, options, _changed) -> (
         Log.debug (fun f -> f "Applying: %a" R.pp key);
         let ( let>> ) = Lwt_result.bind in
-        let ( <?> ) action (err, exn) =
-          let key = Format.asprintf "%a %s" R.pp key in
-          Or_exn.log logger action (key err, key exn)
-        in
+        let ( <?> ) action (err, exn) = Or_exn.log (module Log) action (err, exn) in
         let>> executor =
           get_executor ~store bkey <?> ("Failed to get executor", "Exception getting executor")
         in
