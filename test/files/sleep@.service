@@ -1,0 +1,9 @@
+[Unit]
+Description=Sleeps forever
+
+[Service]
+Restart=always
+ExecStart=sleep infinity
+
+[Install]
+WantedBy=multi-user.target

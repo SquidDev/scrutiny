@@ -259,10 +259,18 @@ let main rules =
     let (), rules = rules { Core.Rules.rules = []; user = `Current; machine = Local } in
 
     (* And run everything! *)
-    Lwt_main.run
-    @@ run_with_progress active_keys ~total:(List.length rules)
-    @@ fun progress ->
-    Lwt_switch.with_switch @@ fun switch -> Runner.apply ~switch ~dry_run ~progress rules
+    let ok =
+      Lwt_main.run
+      @@ run_with_progress active_keys ~total:(List.length rules)
+      @@ fun progress ->
+      Lwt_switch.with_switch @@ fun switch -> Runner.apply ~switch ~dry_run ~progress rules
+    in
+    match ok with
+    | Error err ->
+        Logs.err (fun f -> f "%s" err);
+        exit 1
+    | Ok { failed = 0; _ } -> exit 0
+    | Ok { failed = n; _ } -> exit (min 126 n)
   in
 
   Cmd.v (Cmd.info Sys.executable_name ~doc) term |> Cmd.eval |> exit

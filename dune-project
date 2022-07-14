@@ -1,4 +1,4 @@
-(lang dune 3.0)
+(lang dune 3.3)
 (implicit_transitive_deps false)
 (generate_opam_files true)
 
@@ -14,7 +14,7 @@
   (synopsis "Bits and bobs for wrangling my server")
   (description "A home grown infrastructure management and monitoring toolkit, because I'm silly.")
   (depends
-    (ocaml (>= 4.11))
+    (ocaml (>= 4.14))
 
     ;; Build-time
     (ocamlformat :dev)
@@ -45,4 +45,8 @@
     tls
     uri
     yojson
+
+    ; Test
+    (alcotest :with-test)
+    (alcotest-lwt :with-test)
     ))

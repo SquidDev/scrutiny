@@ -24,7 +24,7 @@
  (name opam)
  (deps scrutiny.opam))
 
-;; Cut down version of @all - doesn't build the executables in src/tools.
+;; Cut down version of @all.
 
 (alias
  (name everything)

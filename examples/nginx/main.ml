@@ -34,6 +34,5 @@ let () =
   Logs.set_level ~all:true (Some Info);
   Logs.set_reporter (Logs_fmt.reporter ());
 
-  let executor = Executor.ssh ~sudo_pw:"password" ~host:"test-server" () in
-  let _executor = Executor.local (* Alternative: use localhost: *) in
-  main ~executor rules
+  let executor = Remote.make ~sudo_pw:"password" "test-server" in
+  main @@ with_remote executor (fun () -> rules)

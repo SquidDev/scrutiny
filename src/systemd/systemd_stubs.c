@@ -68,7 +68,7 @@ CAMLprim value scrutiny_sd_journal_close(value v) {
   CHECK_OPEN(scrutiny_sd_journal_close, journal);
 
   sd_journal_close(journal);
-  Journal_val(journal) = NULL;
+  Journal_val(v) = NULL;
 
   CAMLreturn(Val_unit);
 }

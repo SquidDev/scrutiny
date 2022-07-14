@@ -177,7 +177,6 @@ module Unit = struct
 
     l_protect ~finally:(fun () -> Lwt_dllist.remove node) @@ fun () ->
     let%lwt job = call_native (Native.scrutiny_sd_bus_unit_action bus.bus id action) Fun.id in
-    Printf.printf "Got job %S\n%!" job;
     let%lwt result =
       match !cell with
       | KnownId _ -> failwith "Impossible."

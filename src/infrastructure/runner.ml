@@ -148,8 +148,15 @@ let check_graph is_present rules =
   in
   go_all [] rules
 
+type run_result = {
+  total : int;
+  changed : int;
+  failed : int;
+}
+
 let apply ?(progress = default_progress) ?switch ?(dry_run = false) (rules : Rules.rules) =
-  let keys = KeyTbl.create (List.length rules) in
+  let total = List.length rules in
+  let keys = KeyTbl.create total in
   let store = { keys; progress; executors = RemoteTbl.create 2; switch } in
 
   let tasks =
@@ -161,16 +168,16 @@ let apply ?(progress = default_progress) ?switch ?(dry_run = false) (rules : Rul
       rules
   in
   match check_graph (KeyTbl.mem keys) rules with
-  | Error e ->
-      Logs.err (fun f -> f "%s" e);
-      exit 1
+  | Error e -> Lwt.return_error e
   | Ok () ->
       let%lwt () = Lwt_list.iter_p (fun f -> f ()) tasks in
-      let ok =
-        KeyTbl.to_seq keys |> Seq.map snd
-        |> CCSeq.for_all (function
-             | Finished (Ok _) -> true
-             | Finished (Error _) | Pending _ -> false)
+      let changed, failed =
+        KeyTbl.fold
+          (fun _ result (changed, failed) ->
+            match result with
+            | Finished (Ok false) -> (changed, failed)
+            | Finished (Ok true) -> (changed + 1, failed)
+            | Finished (Error _) | Pending _ -> (changed, failed + 1))
+          keys (0, 0)
       in
-      if not ok then exit 1;
-      Lwt.return_unit
+      Lwt.return_ok { changed; failed; total = List.length rules }

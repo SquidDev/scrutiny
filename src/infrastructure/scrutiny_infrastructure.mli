@@ -155,8 +155,14 @@ end
 
 (** {3 Applying states} *)
 
+type run_result = {
+  total : int;
+  changed : int;
+  failed : int;
+}
+
 (** Apply a collection of rules. *)
-val apply : ?dry_run:bool -> ([ `Local ], unit) Rules.t -> unit Lwt.t
+val apply : ?dry_run:bool -> ([ `Local ], unit) Rules.t -> (run_result, string) result Lwt.t
 
 (** Parse command line arguments and apply a set of rules. *)
 val main : ([ `Local ], unit) Rules.t -> unit

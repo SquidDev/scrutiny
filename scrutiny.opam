@@ -10,8 +10,8 @@ license: "BSD-3-Clause"
 homepage: "https://github.com/squiddev/scrutiny"
 bug-reports: "https://github.com/squiddev/scrutiny/issues"
 depends: [
-  "dune" {>= "3.0"}
-  "ocaml" {>= "4.11"}
+  "dune" {>= "3.3"}
+  "ocaml" {>= "4.14"}
   "ocamlformat" {dev}
   "ocaml-lsp-server" {dev}
   "cmdliner"
@@ -38,6 +38,8 @@ depends: [
   "tls"
   "uri"
   "yojson"
+  "alcotest" {with-test}
+  "alcotest-lwt" {with-test}
   "odoc" {with-doc}
 ]
 build: [

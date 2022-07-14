@@ -1,0 +1,30 @@
+(test
+ (name test)
+ (libraries
+  alcotest
+  alcotest-lwt
+  containers
+  fmt
+  fpath
+  logs
+  logs.fmt
+  lwt
+  lwt.unix
+  scrutiny.infrastructure
+  scrutiny.infrastructure.resources
+  unix)
+ (preprocess
+  (pps lwt_ppx))
+ (deps
+  ../src/infrastructure/bin/tunnel.exe
+  support/Dockerfile
+  (source_tree files))
+ (action
+  (setenv
+   SCRUTINY_SSH
+   %{dep:support/podman-exec.sh}
+   (run %{test}))))
+
+(rule
+ (action
+  (copy support/t.mli t_scrutiny_infrastructure.mli)))

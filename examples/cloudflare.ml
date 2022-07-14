@@ -21,10 +21,11 @@ let () =
   exit @@ Lwt_main.run
   @@
   let open Lwt.Syntax in
-  let* task = Zone.find ~auth site in
+  Client.with_client auth @@ fun client ->
+  let* task = Zone.find ~client site in
   let+ ok, result =
     match task with
-    | Some zone -> DnsRecord.Spec.sync ~dryrun:true ~auth ~zone records
+    | Some zone -> DnsRecord.Spec.sync ~dryrun:true ~client ~zone records
     | None -> Lwt.return (Error (Format.asprintf "Cannot find %s" site), Scrutiny_diff.empty)
   in
   Format.printf "%a@." (Scrutiny_diff.pp ~full:false) result;

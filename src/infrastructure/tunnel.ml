@@ -21,6 +21,11 @@ module Diff = struct
     | _ -> raise (Yojson.Json_error "Malformed Scrutiny_diff")
 end
 
+let pp_exception out = function
+  | Ppx_yojson_conv_lib.Yojson_conv.Of_yojson_error (e, json) ->
+      Fmt.pf out "%a in %a" Fmt.exn e (Yojson.Safe.pretty_print ~std:false) json
+  | e -> Fmt.exn out e
+
 module AppliedResource = struct
   type ('key, 'value, 'options) t = {
     resource : ('key, 'value, 'options) Resource.t;
@@ -171,8 +176,8 @@ let wait_for_init (proc : Lwt_process.process_full) =
             "%VERSION%"
           |> Lwt.return_error
       | _ -> Lwt.return_error "Unexpected other message"
-      | exception Yojson.Json_error _ -> gobble ()
-      | exception End_of_file -> Lwt.return_error "Unexpected end of file")
+      | exception Yojson.Json_error _ -> gobble ())
+    | exception End_of_file -> Lwt.return_error "Unexpected end of file"
   in
   try%lwt Lwt_unix.with_timeout 5.0 gobble
   with Lwt_unix.Timeout -> Lwt.return_error "Tunnel failed after a timeout."
@@ -271,7 +276,7 @@ and executor ?switch ~input ~output () : Executor.t =
           | CheckResult { id; result } -> Lwt.wakeup_later (ITbl.find check_wait id) result
           | ApplyResult { id; result } -> Lwt.wakeup_later (ITbl.find apply_wait id) result
           | Log msg -> Logging.log_record keys msg
-          | exception e -> Log.err (fun f -> f "Error reading tunnel message (%a)" Fmt.exn e));
+          | exception e -> Log.err (fun f -> f "Error reading tunnel message (%a)" pp_exception e));
           go ()
       | exception End_of_file -> Lwt.return_unit
     in
@@ -362,14 +367,15 @@ and make_executor_factory ?switch () : Core.user -> Executor.t Or_exn.t Lwt.t =
 let ssh ?switch ({ sudo_pw; host; tunnel_path } : Remote.t) =
   Lwt_switch.check switch;
   let setup, cmd =
+    let ssh = Sys.getenv_opt "SCRUTINY_SSH" |> Option.value ~default:"ssh" in
     match sudo_pw with
-    | None -> (wait_for_init, [| "ssh"; host; tunnel_path |])
+    | None -> (wait_for_init, [| ssh; host; tunnel_path |])
     | Some password ->
         let prompt proc =
           let%lwt () = Lwt_unix.sleep 0.5 (* TODO: Wait for prompt rather than sleeping. *) in
           let%lwt () = Lwt_io.write_line proc#stdin password in
           wait_for_init proc
         in
-        (prompt, [| "ssh"; host; "sudo"; "-S"; "-p"; "sudo[scrutiny-infra-tunnel]: "; tunnel_path |])
+        (prompt, [| ssh; host; "sudo"; "-S"; "-p"; "sudo[scrutiny-infra-tunnel]: "; tunnel_path |])
   in
   executor_of_cmd ?switch setup cmd
