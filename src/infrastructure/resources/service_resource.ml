@@ -77,9 +77,7 @@ module ServiceState = struct
   }
   [@@deriving yojson]
 
-  let digest { enabled; running; monitor } =
-    Yojson.Safe.to_string
-      (`Assoc [ ("enabled", `Bool enabled); ("running", `Bool running); ("monitor", `Int monitor) ])
+  let digest state = Yojson.Safe.to_string (yojson_of_t state)
 end
 
 module ServiceChange = struct

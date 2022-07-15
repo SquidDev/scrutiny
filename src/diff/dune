@@ -1,5 +1,6 @@
 (library
  (name scrutiny_diff)
  (public_name scrutiny.diff)
- (synopsis "Basic display structural diffs.")
+ (synopsis
+  "A basic library for diffing strings and structures and pretty-printing the result.")
  (libraries fmt))

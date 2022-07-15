@@ -45,9 +45,9 @@ module File = struct
     contents : string;
   }
 
-  let rows : partial_state Scrutiny_diff.Structure.row list =
+  let fields : partial_state Scrutiny_diff.Structure.field list =
     let open Scrutiny_diff.Structure in
-    List.map (map (fun x -> x.file_mod)) File_mod.rows
+    List.map (map (fun x -> x.file_mod)) File_mod.fields
     @ [
         {
           name = "contents";
@@ -110,7 +110,7 @@ module File = struct
         let change =
           Infra.NeedsChange
             {
-              diff = Scrutiny_diff.Structure.compare rows current (Some target);
+              diff = Scrutiny_diff.Structure.diff fields current (Some target);
               apply = (fun () -> do_apply ~path current target);
             }
         in

@@ -1,17 +1,20 @@
+(** Modify a node on the filesystem, enforcing ownership and permissions. *)
+
 type t = {
   user : int;
   group : int;
   perms : int;
 }
 
-let rows =
+let fields =
   let open Scrutiny_diff.Structure in
   [
-    row ~name:"user" ~pp:string_of_int (fun x -> x.user);
-    row ~name:"group" ~pp:string_of_int (fun x -> x.group);
-    row ~name:"perms" ~pp:(Format.sprintf "%03o") (fun x -> x.perms);
+    field ~name:"user" ~pp:string_of_int (fun x -> x.user);
+    field ~name:"group" ~pp:string_of_int (fun x -> x.group);
+    field ~name:"perms" ~pp:(Format.sprintf "%03o") (fun x -> x.perms);
   ]
 
+(** Read the current state of the path. *)
 let stat ~expected_kind ~expected_kind_str path =
   match%lwt Lwt_unix.stat (Fpath.to_string path) with
   | { st_kind; st_uid; st_gid; st_perm; _ } ->
@@ -22,6 +25,7 @@ let stat ~expected_kind ~expected_kind_str path =
   | exception Unix.Unix_error (code, _, _) ->
       Lwt.return_error (Format.sprintf "Failed to get current state (%s)" (Unix.error_message code))
 
+(** Apply a state to the current *)
 let apply ~current ~target:{ user; group; perms } path =
   let open More_lets in
   let path = Fpath.to_string path in

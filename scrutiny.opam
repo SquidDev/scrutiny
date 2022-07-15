@@ -38,6 +38,7 @@ depends: [
   "tls"
   "uri"
   "yojson"
+  "mdx"
   "alcotest" {with-test}
   "alcotest-lwt" {with-test}
   "odoc" {with-doc}

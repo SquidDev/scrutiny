@@ -1,8 +1,0 @@
-(executable
- (name make))
-
-(rule
- (action
-  (with-stdout-to
-   config.txt
-   (run ./make.exe %{lib:ctypes:ctypes_cstubs_internals.h}))))

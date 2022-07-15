@@ -1,3 +1,5 @@
+(** A Prometheus exporter for SystemD services. *)
+
 open Lwt.Syntax
 open Httpaf
 open Httpaf_lwt_unix

@@ -1,6 +1,7 @@
 (lang dune 3.3)
 (implicit_transitive_deps false)
 (generate_opam_files true)
+(using mdx 0.2)
 
 (name scrutiny)
 (version 0.1.0)
@@ -47,6 +48,7 @@
     yojson
 
     ; Test
+    mdx
     (alcotest :with-test)
     (alcotest-lwt :with-test)
     ))

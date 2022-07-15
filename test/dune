@@ -28,3 +28,6 @@
 (rule
  (action
   (copy support/t.mli t_scrutiny_infrastructure.mli)))
+
+(mdx
+ (libraries scrutiny.diff containers))

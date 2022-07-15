@@ -113,7 +113,7 @@ module Logging = struct
     Log.msg level (fun f ->
         let tags = Logs.Tag.empty in
         let tags =
-          match CCOption.bind key (ITbl.find_opt keys) with
+          match Option.bind key (ITbl.find_opt keys) with
           | None -> tags
           | Some key -> Logs.Tag.add Executor.PartialKey.tag key tags
         in

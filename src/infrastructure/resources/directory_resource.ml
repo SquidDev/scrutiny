@@ -45,7 +45,7 @@ module Dir = struct
       when current.user = target.user && current.group = target.group
            && current.perms = target.perms -> Lwt.return_ok Infra.Correct
     | Ok _, Ok target ->
-        let diff = Scrutiny_diff.Structure.compare File_mod.rows None (Some target) in
+        let diff = Scrutiny_diff.Structure.diff File_mod.fields None (Some target) in
         let apply () =
           match%lwt Lwt_unix.mkdir (Fpath.to_string path) target.perms with
           | () -> File_mod.apply ~current:None ~target path
