@@ -1,6 +1,6 @@
 (library
- (name scrutiny_infrastructure_resources)
- (public_name scrutiny.infrastructure.resources)
+ (name scrutiny_infrastructure_resources_internal)
+ (public_name scrutiny.infrastructure.resources_internal)
  (libraries
   ; Core
   containers
@@ -13,12 +13,26 @@
   scrutiny.diff
   scrutiny.infrastructure
   yojson
-  ; File resource
   digestif
-  jingoo
-  ; Service resource
-  scrutiny.systemd
-  ; Cloudflare resource
-  scrutiny.cloudflare)
+  scrutiny.systemd)
+ (modules directory_resource file_mod file_resource service_resource user)
  (preprocess
   (pps lwt_ppx ppx_yojson_conv)))
+
+(library
+ (name scrutiny_infrastructure_resources)
+ (public_name scrutiny.infrastructure.resources)
+ (libraries
+  fmt
+  lwt
+  scrutiny.diff
+  result
+  scrutiny.infrastructure
+  scrutiny.infrastructure.resources_internal
+  yojson
+  fpath
+  jingoo
+  scrutiny.cloudflare)
+ (modules cloudflare_resource scrutiny_infrastructure_resources)
+ (preprocess
+  (pps lwt_ppx)))

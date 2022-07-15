@@ -56,7 +56,7 @@ module Dir = struct
         Lwt.return_ok (Infra.NeedsChange { diff; apply })
 end
 
-let dir_module =
+let dir_resource =
   Infra.Resource.make
     (module Dir : Infra.Resource
       with type Key.t = Fpath.t
@@ -68,13 +68,3 @@ type dir_state = DirState.t = {
   group : User.t;
   perms : Unix.file_perm;
 }
-
-let directory path (action : unit -> (DirState.t Lwt.t, unit) Infra.Action.t) =
-  Infra.Rules.resource dir_module path action
-
-let directory' path ?(user = `Current) ?group ?(perms = 0o755)
-    (action : unit -> (unit, unit) Infra.Action.t) =
-  directory path @@ fun () ->
-  let open Infra.Action in
-  let+ () = action () in
-  Lwt.return { user; group = Option.value ~default:user group; perms }

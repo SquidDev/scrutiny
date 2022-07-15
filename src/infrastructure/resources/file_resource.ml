@@ -1,5 +1,4 @@
 module Infra = Scrutiny_infrastructure
-module SMap = Map.Make (String)
 
 let hash_file contents =
   let module H = Digestif.SHA256 in
@@ -117,7 +116,7 @@ module File = struct
         Lwt.return_ok change
 end
 
-let file_module =
+let file_resource =
   Infra.Resource.make
     (module File : Infra.Resource
       with type Key.t = Fpath.t
@@ -131,28 +130,3 @@ type file_state = FileState.t = {
   contents : string;
   make_dirs : bool;
 }
-
-let file path (action : unit -> (FileState.t Lwt.t, unit) Infra.Action.t) =
-  Infra.Rules.resource file_module path action
-
-let file' path ?(user = `Current) ?group ?(perms = 0o644) ?(make_dirs = true) contents =
-  file path @@ fun () ->
-  let open Infra.Action in
-  let+ contents = contents () in
-  Lwt.return
-    { FileState.user; group = Option.value ~default:user group; make_dirs; perms; contents }
-
-let env = { Jingoo.Jg_types.std_env with strict_mode = true; autoescape = false }
-
-let template path ?user ?group ?perms ?make_dirs ~template params =
-  file' path ?user ?group ?perms ?make_dirs @@ fun () ->
-  let open Infra.Action in
-  let+ params = params () in
-  let params = List.to_seq params |> SMap.of_seq in
-  let models name =
-    match SMap.find_opt name params with
-    | Some x -> x
-    | None -> raise Not_found
-    (* TODO: invalid_arg (Printf.sprintf "Variable %S is not defined" name) *)
-  in
-  Jingoo.Jg_template2.from_file ~env ~models (Fpath.to_string template)

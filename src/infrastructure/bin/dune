@@ -10,7 +10,7 @@
   lwt
   lwt.unix
   scrutiny_infrastructure
-  scrutiny_infrastructure_resources))
+  scrutiny_infrastructure_resources_internal))
 
 (rule
  (target tunnel.strip.exe)

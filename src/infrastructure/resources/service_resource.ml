@@ -204,7 +204,7 @@ module Service = struct
           Lwt.return_ok (Infra.NeedsChange { diff; apply })
 end
 
-let service_module =
+let service_resource =
   Infra.Resource.make
     (module Service : Infra.Resource
       with type Key.t = ServiceName.t
@@ -213,7 +213,7 @@ let service_module =
 
 let service ~name ~scope action =
   let name = if String.contains name '.' then name else name ^ ".service" in
-  Infra.Rules.resource service_module { name; scope } @@ fun () ->
+  Infra.Rules.resource service_resource { name; scope } @@ fun () ->
   let open Infra.Action in
   let+ result = action () in
   Lwt.return result

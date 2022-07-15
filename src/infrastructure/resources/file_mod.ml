@@ -27,7 +27,7 @@ let stat ~expected_kind ~expected_kind_str path =
 
 (** Apply a state to the current *)
 let apply ~current ~target:{ user; group; perms } path =
-  let open More_lets in
+  let ( let>> ) = Lwt_result.bind in
   let path = Fpath.to_string path in
 
   let>> () =

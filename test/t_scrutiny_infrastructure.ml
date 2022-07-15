@@ -8,8 +8,8 @@ module I = struct
   include Scrutiny_infrastructure_resources
   include Rules
   include Action
-  include File_resource
-  include Service_resource
+  include File
+  include Service
 
   let rec iter_rules f xs =
     match xs () with

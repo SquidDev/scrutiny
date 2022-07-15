@@ -5,5 +5,5 @@
 # be good enough.
 
 FROM fedora:36
-RUN dnf install -qy systemd openssl1.1 nginx && dnf clean all
+RUN dnf install -qy systemd nginx && dnf clean all
 CMD [ "/lib/systemd/systemd" ]
