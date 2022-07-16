@@ -27,7 +27,6 @@ module Native = struct
 
   external scrutiny_sd_bus_open_user : unit -> sd_bus = "scrutiny_sd_bus_open_user"
   external scrutiny_sd_bus_open_system : unit -> sd_bus = "scrutiny_sd_bus_open_system"
-  external scrutiny_sd_bus_open_machine : string -> sd_bus = "scrutiny_sd_bus_open_machine"
   external scrutiny_sd_bus_open_address : string -> sd_bus = "scrutiny_sd_bus_open_address"
   external scrutiny_sd_bus_close : sd_bus -> unit = "scrutiny_sd_bus_close"
 
@@ -124,13 +123,28 @@ type connection =
   | `Bus of string
   ]
 
+(** Get the address needed to launch a bus for another user on this machine. This is equivalent to
+    sd_bus_open_user_machine, but works with older systemd versions which don't have that symbol. *)
+let get_user_bus user =
+  String.concat ""
+    [
+      "unixexec:path=systemd-run,";
+      "argv1=-M.host,";
+      "argv2=-PGq,";
+      "argv3=--wait,";
+      "argv4=-pUser%3d" ^ user ^ ",";
+      "argv5=-pPAMName%3dlogin,";
+      "argv6=systemd-stdio-bridge,";
+      "argv7=-punix:path%3d%24%7bXDG_RUNTIME_DIR%7d/bus";
+    ]
+
 let of_bus ~sw (conn : connection) =
   Lwt_switch.check (Some sw);
   let bus =
     match conn with
     | `User -> Native.scrutiny_sd_bus_open_user ()
     | `System -> Native.scrutiny_sd_bus_open_system ()
-    | `Other_user u -> Native.scrutiny_sd_bus_open_machine (u ^ "@")
+    | `Other_user u -> Native.scrutiny_sd_bus_open_address (get_user_bus u)
     | `Bus b -> Native.scrutiny_sd_bus_open_address b
   in
   let bus =

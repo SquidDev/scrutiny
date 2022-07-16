@@ -271,19 +271,6 @@ CAMLprim value scrutiny_sd_bus_open_system() {
   CAMLreturn(v);
 }
 
-CAMLprim value scrutiny_sd_bus_open_machine(value username) {
-  CAMLparam1(username);
-  CAMLlocal1(v);
-
-  sd_bus *bus;
-  int r = sd_bus_open_user_machine(&bus, String_val(username));
-  CHECK_OK(sd_bus_open_user_machine, r);
-
-  v = caml_alloc_custom(&sd_bus_ops, sizeof(struct bus *), 0, 1);
-  Bus_val(v) = bus;
-  CAMLreturn(v);
-}
-
 CAMLprim value scrutiny_sd_bus_open_address(value path) {
   CAMLparam1(path);
   CAMLlocal1(v);

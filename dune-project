@@ -24,31 +24,26 @@
     ; Core
     cmdliner
     (containers (>= 3.6))
-    ctypes
     digestif
     fmt
     fpath
-    integers
     jingoo
     logs
     lwt
     lwt_ppx
     lwt-dllist
-    menhir
     piaf
     ppx_yojson_conv
     ppx_yojson_conv_lib
     (progress (>= 0.2.0))
-    prometheus
+    (prometheus (= 1.1))
     re
     result
-    sqlite3
-    tls
     uri
     yojson
 
     ; Test
-    mdx
+    (mdx :with-test)
     (alcotest :with-test)
     (alcotest-lwt :with-test)
     ))
