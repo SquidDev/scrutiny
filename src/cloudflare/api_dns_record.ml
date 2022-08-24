@@ -30,7 +30,7 @@ let pp fmt r = Format.fprintf fmt "{%s} %a" r.id pp_short r
 let list ~client ~zone =
   Request.call ~client
     ~query:[ ("per_page", [ "100" ]) ]
-    ~parse:(list_of_yojson t_of_yojson) `GET
+    ~parse:(list_of_yojson t_of_yojson) GET
     (Printf.sprintf "zones/%s/dns_records" zone)
 
 let add_opt name value xs : (string * Yojson.Safe.t) list =
@@ -50,20 +50,18 @@ let add ~client ~zone ~type_ ~name ~content ?proxied ?ttl ?priority ?data () =
     |> add_opt "priority" (Option.map (fun x -> `Int x) priority)
     |> add_opt "data" data
   in
-  Request.call ~client
-    ~body:(Yojson.Safe.to_string (`Assoc body))
-    ~parse:t_of_yojson `POST
+  Request.call ~client ~parse:t_of_yojson
+    (POST (Yojson.Safe.to_string (`Assoc body)))
     (Printf.sprintf "zones/%s/dns_records" zone)
 
 let update ~client ~zone ~type_ ~name ~content ?proxied ?ttl id =
   let body = body_common ~type_ ~name ~content ?proxied ?ttl () in
-  Request.call ~client
-    ~body:(Yojson.Safe.to_string (`Assoc body))
-    ~parse:t_of_yojson `PUT
+  Request.call ~client ~parse:t_of_yojson
+    (PUT (Yojson.Safe.to_string (`Assoc body)))
     (Printf.sprintf "zones/%s/dns_records/%s" zone id)
 
 let delete ~client ~zone id =
   Request.call ~client
     ~parse:(fun _ -> ())
-    `DELETE
+    DELETE
     (Printf.sprintf "zones/%s/dns_records/%s" zone id)

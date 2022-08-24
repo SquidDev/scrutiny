@@ -9,7 +9,7 @@ let respond_error reqd status reason =
   let headers = Headers.of_list [ ("connection", "close") ] in
   Reqd.respond_with_string reqd (Response.create ~headers status) reason
 
-let request_handler config (_ : Unix.sockaddr) { Gluten.reqd; _ } =
+let request_handler config (_ : Unix.sockaddr) reqd =
   let request = Reqd.request reqd in
   match request with
   | { target = "/metrics"; _ } ->

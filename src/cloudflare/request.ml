@@ -5,24 +5,20 @@ type auth =
   | Email of string * string
 
 let headers ~auth =
-  let headers = Piaf.Headers.of_list [ ("Content-Type", "application/json") ] in
+  let headers = [ ("Content-Type", "application/json") ] in
   match auth with
-  | Token t -> Piaf.Headers.add headers "Authorization" ("Bearer " ^ t)
-  | Email (email, tok) ->
-      let headers = Piaf.Headers.add headers "X-Auth-Email" email in
-      Piaf.Headers.add headers "X-Auth-Key" tok
+  | Token t -> ("Authorization", "Bearer " ^ t) :: headers
+  | Email (email, tok) -> ("X-Auth-Key", tok) :: ("X-Auth-Email", email) :: headers
 
-type client = {
-  client : Piaf.Client.t;
-  headers : (string * string) list;
-}
+type client = { headers : (string * string) list }
 
-let with_client auth fn =
-  match%lwt Uri.make ~scheme:"https" ~host:"api.cloudflare.com" () |> Piaf.Client.create with
-  | Error e -> failwith (Piaf.Error.to_string e)
-  | Ok client ->
-      let c = { client; headers = headers ~auth |> Piaf.Headers.to_list } in
-      Lwt.finalize (fun () -> fn c) (fun () -> Piaf.Client.shutdown client)
+let with_client auth fn = fn { headers = headers ~auth }
+
+type request_body =
+  | GET
+  | DELETE
+  | POST of string
+  | PUT of string
 
 type message = {
   code : int;
@@ -40,25 +36,49 @@ type 'a response = {
 }
 [@@deriving of_yojson] [@@yojson.allow_extra_fields]
 
-let mk_query path query = Uri.make ~path:("/client/v4/" ^ path) ~query () |> Uri.to_string
+let mk_query path query =
+  Uri.make ~scheme:"https" ~host:"api.cloudflare.com" ~path:("/client/v4/" ^ path) ~query ()
+  |> Uri.to_string
 
-let make_request client ?body ~meth uri =
-  match%lwt Piaf.Client.request client.client ?body ~headers:client.headers ~meth uri with
-  | Error e -> Lwt.return_error e
-  | Ok response -> (
-      match%lwt Piaf.Body.to_string response.body with
-      | Error e -> Lwt.return_error e
-      | Ok body -> Lwt.return_ok (response, body))
+let read_function body =
+  let idx = ref 0 in
+  fun len ->
+    let len = min len (String.length body - !idx) in
+    let r = String.sub body !idx len in
+    idx := !idx + len;
+    r
 
-let call ~client ?body ?(query = []) ~parse meth path =
+let make_request client uri body =
+  let request = Curl.init () in
+  let buffer = Buffer.create 32 in
+  Curl.set_url request uri;
+  Curl.set_writefunction request (fun str -> Buffer.add_string buffer str; String.length str);
+  List.map (fun (k, v) -> Printf.sprintf "%s: %s" k v) client.headers |> Curl.set_httpheader request;
+
+  (match body with
+  | GET -> Curl.set_httpget request true
+  | POST body ->
+      Curl.set_post request true;
+      Curl.set_readfunction request (read_function body)
+  | DELETE -> Curl.set_customrequest request "DELETE"
+  | PUT body ->
+      Curl.set_put request true;
+      Curl.set_readfunction request (read_function body));
+
+  Lwt.finalize
+    (fun () ->
+      match%lwt Curl_lwt.perform request with
+      | CURLE_OK -> Lwt.return_ok (Curl.get_responsecode request, Buffer.contents buffer)
+      | err -> Lwt.return_error (Curl.strerror err))
+    (fun () -> Curl.cleanup request; Lwt.return_unit)
+
+let call ~client ?(query = []) ~parse body path =
   let uri = mk_query path query in
-  match%lwt
-    make_request client ?body:(Option.map (fun x -> Piaf.Body.of_string x) body) ~meth uri
-  with
+  match%lwt make_request client uri body with
   | Error e ->
-      Log.err (fun f -> f "Request failed: %a" Piaf.Error.pp_hum e);
+      Log.err (fun f -> f "Request failed: %s" e);
       Lwt.return_none
-  | Ok (response, body) -> (
+  | Ok (status, body) -> (
       let json =
         match Yojson.Safe.from_string body |> response_of_yojson parse with
         | x ->
@@ -72,8 +92,8 @@ let call ~client ?body ?(query = []) ~parse meth path =
             Log.err (fun f -> f "Error decoding JSON %S => %a" body Fmt.exn e);
             None
       in
-      match response.status with
-      | `OK | `Not_modified -> Lwt.return json
+      match status with
+      | 200 | 201 -> Lwt.return json
       | c ->
-          Log.err (fun f -> f "Request failed: %s\n%S" (Piaf.Status.to_string c) body);
+          Log.err (fun f -> f "Request failed: %d\n%S" c body);
           Lwt.return_none)

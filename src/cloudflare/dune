@@ -3,10 +3,11 @@
  (public_name scrutiny.cloudflare)
  (synopsis "Utilities for interacting with Cloudflare's API.")
  (libraries
+  curl
+  curl.lwt
   fmt
   logs
   lwt
-  piaf
   ppx_yojson_conv_lib
   result
   scrutiny.diff

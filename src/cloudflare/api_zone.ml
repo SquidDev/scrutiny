@@ -13,7 +13,7 @@ type t = {
 let find ~client name =
   Request.call ~client
     ~query:[ ("match", [ "any" ]); ("name", [ name ]) ]
-    ~parse:(list_of_yojson t_of_yojson) `GET "zones"
+    ~parse:(list_of_yojson t_of_yojson) GET "zones"
   >|= function
   | Some ({ id; _ } :: _) -> Some id
   | _ -> None

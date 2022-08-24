@@ -6,12 +6,11 @@
   containers
   fmt
   fpath
-  gluten
   logs
   lwt
   lwt.unix
-  piaf.httpaf
-  piaf.httpaf-lwt-unix
+  httpaf
+  httpaf-lwt-unix
   prometheus
   scrutiny.prometheus.httpaf
   scrutiny.systemd))
