@@ -1,13 +1,14 @@
 (library
- (name scrutiny_cloudflare)
- (public_name scrutiny.cloudflare)
- (synopsis "Utilities for interacting with Cloudflare's API.")
+ (name scrutiny_dns)
+ (public_name scrutiny.dns)
+ (synopsis "Manage DNS records using various cloud-provider's APIs")
  (libraries
   curl
   curl.lwt
   fmt
   logs
   lwt
+  lwt.unix
   ppx_yojson_conv_lib
   result
   scrutiny.diff

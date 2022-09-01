@@ -60,4 +60,4 @@ module Directory = struct
 end
 
 module Service = Service_resource
-module Cloudflare = Cloudflare_resource
+module Dns = Dns_resource

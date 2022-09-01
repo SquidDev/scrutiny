@@ -1,14 +1,7 @@
 (executable
- (name cloudflare)
- (modules cloudflare)
- (libraries
-  fmt.tty
-  logs
-  logs.fmt
-  lwt
-  lwt.unix
-  scrutiny.cloudflare
-  scrutiny.diff))
+ (name dns)
+ (modules dns)
+ (libraries fmt.tty logs logs.fmt lwt lwt.unix scrutiny.dns scrutiny.diff))
 
 (executable
  (name journal_tail)

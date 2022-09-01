@@ -1,10 +1,8 @@
-open Scrutiny_cloudflare
+open Scrutiny_dns
 
-let auth : auth =
-  let key = Sys.getenv "CF_API_KEY" in
-  match Sys.getenv_opt "CF_API_EMAIL" with
-  | Some email -> Email (email, key)
-  | None -> Token key
+let source : source =
+  let token = Sys.getenv "PORKBUN_API_TOKEN" in
+  Porkbun { token }
 
 let site, records =
   let open DnsRecord.Spec in
@@ -21,7 +19,7 @@ let () =
   exit @@ Lwt_main.run
   @@
   let open Lwt.Syntax in
-  Client.with_client auth @@ fun client ->
+  Client.with_client source @@ fun client ->
   let* task = Zone.find ~client site in
   let+ ok, result =
     match task with

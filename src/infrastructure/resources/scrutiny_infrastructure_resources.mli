@@ -85,4 +85,4 @@ module Service : sig
     ('ctx, (unit, [ `Resource ]) key) Rules.t
 end
 
-module Cloudflare = Cloudflare_resource
+module Dns = Dns_resource

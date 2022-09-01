@@ -32,7 +32,7 @@
   yojson
   fpath
   jingoo
-  scrutiny.cloudflare)
- (modules cloudflare_resource scrutiny_infrastructure_resources)
+  scrutiny.dns)
+ (modules dns_resource scrutiny_infrastructure_resources)
  (preprocess
   (pps lwt_ppx)))

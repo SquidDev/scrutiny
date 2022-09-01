@@ -1,10 +1,10 @@
 module Infra = Scrutiny_infrastructure
-module CF = Scrutiny_cloudflare
+module Dns = Scrutiny_dns
 
 module State = struct
   type t = {
-    spec : CF.DnsRecord.Spec.t list;
-    auth : CF.auth;
+    spec : Dns.DnsRecord.Spec.t list;
+    source : Dns.source;
   }
 
   let yojson_of_t x : Yojson.Safe.t = `String (Marshal.to_string x [])
@@ -25,25 +25,25 @@ module CFResource = struct
 
   let pp out x = Fmt.fmt "Zone %s" out x
 
-  let apply ~zone ~auth ~spec () =
+  let apply ~zone ~source ~spec () =
     match%lwt
-      CF.Client.with_client auth (fun client ->
-          CF.DnsRecord.Spec.sync ~dryrun:false ~client ~zone spec)
+      Dns.Client.with_client source (fun client ->
+          Dns.DnsRecord.Spec.sync ~dryrun:false ~client ~zone spec)
     with
     | Error e, _ -> Lwt.return_error e
     | Ok (), _ -> Lwt.return_ok ()
 
-  let apply zone ({ auth; spec } : State.t) () : (Infra.change, string) result Lwt.t =
-    CF.Client.with_client auth @@ fun client ->
-    match%lwt CF.Zone.find ~client zone with
-    | None -> Lwt.return_error "Cannot find zone"
-    | Some zone -> (
-        match%lwt CF.DnsRecord.Spec.sync ~dryrun:true ~client ~zone spec with
+  let apply zone ({ source; spec } : State.t) () : (Infra.change, string) result Lwt.t =
+    Dns.Client.with_client source @@ fun client ->
+    match%lwt Dns.Zone.find ~client zone with
+    | Error e -> Lwt.return_error ("Cannot find zone: " ^ e)
+    | Ok zone -> (
+        match%lwt Dns.DnsRecord.Spec.sync ~dryrun:true ~client ~zone spec with
         | Error e, _ -> Lwt.return_error e
         | Ok (), diff ->
             let apply : Infra.change =
               if Scrutiny_diff.is_empty diff then Correct
-              else NeedsChange { diff; apply = apply ~zone ~auth ~spec }
+              else NeedsChange { diff; apply = apply ~zone ~source ~spec }
             in
             Lwt.return_ok apply)
 end
@@ -55,8 +55,8 @@ let cf_module =
        and type EdgeOptions.t = unit
        and type Value.t = State.t)
 
-let zone id ~auth spec =
+let zone id ~source spec =
   Infra.Rules.resource cf_module id @@ fun () ->
   let open Infra.Action in
   let+ spec = spec () in
-  Lwt.return { State.auth; spec }
+  Lwt.return { State.source; spec }

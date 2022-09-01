@@ -1,14 +1,16 @@
 (** Partial bindings for Cloudflare's API. *)
 
-(** An authorisation method. *)
-type auth =
-  | Token of string
-  | Email of string * string
+(** The DNS provider to use. *)
+type source =
+  | Porkbun of {
+      api_key : string;
+      secret : string;
+    }
 
 module Client : sig
   type t
 
-  val with_client : auth -> (t -> 'a Lwt.t) -> 'a Lwt.t
+  val with_client : source -> (t -> 'a Lwt.t) -> 'a Lwt.t
 end
 
 (** Represents a unique ID of some resource. This signature is included in the definitions of actual
@@ -24,7 +26,7 @@ module Zone : sig
   include Id
 
   (** Find a zone. Returns [None] on failure. *)
-  val find : client:Client.t -> string -> id option Lwt.t
+  val find : client:Client.t -> string -> (id, string) result Lwt.t
 end
 
 (** A single DNS record within a zone. *)
@@ -36,51 +38,41 @@ module DnsRecord : sig
     type_ : string;  (** The type of this record (e.g. [A], [MX])*)
     name : string;  (** The domain name of this record (e.g. [example.com]). *)
     content : string;  (** The contents of this record (e.g. [127.0.0.1])*)
-    proxiable : bool;  (** Whether this record {i can} be proxied through Cloudflare. *)
-    proxied : bool;  (** Whether this record is proxied through Cloudflare. *)
     ttl : int;  (** The TTL of this record. *)
-    locked : bool;  (** Whether this record can be edited. *)
     zone_id : Zone.id;  (** The zone this record belongs to. *)
-    zone_name : string;  (** The name of the zone this record belongs to. *)
-    created_on : string;  (** When this record was created. *)
-    modified_on : string;  (** When this record was modified. *)
-    data : Yojson.Safe.t option;  (** Additional information about this record. *)
     priority : int option;  (** The priority of this record (only set for [MX] records).*)
   }
 
   (** List all records in a zone. Returns [None] on failure. *)
-  val list : client:Client.t -> zone:Zone.id -> t list option Lwt.t
+  val list : client:Client.t -> zone:Zone.id -> (t list, string) result Lwt.t
 
   (** Create a new record, using the same fields as those defined in {!t}. Returns the created
-      record, or [None] if an error occurred. *)
+      record's ID. *)
   val add :
     client:Client.t ->
     zone:Zone.id ->
     type_:string ->
     name:string ->
     content:string ->
-    ?proxied:bool ->
     ?ttl:int ->
     ?priority:int ->
-    ?data:Yojson.Safe.t ->
     unit ->
-    t option Lwt.t
+    (id, string) result Lwt.t
 
-  (** Edit an existing record, using the same fields as those defined in {!t}. Returns the updated
-      record, or [None] if an error occurred. *)
+  (** Edit an existing record, using the same fields as those defined in {!t}. *)
   val update :
     client:Client.t ->
     zone:Zone.id ->
     type_:string ->
     name:string ->
     content:string ->
-    ?proxied:bool ->
     ?ttl:int ->
+    ?priority:int ->
     id ->
-    t option Lwt.t
+    (unit, string) result Lwt.t
 
   (** Delete a record. Returns [None] if an error occurred. *)
-  val delete : client:Client.t -> zone:Zone.id -> id -> unit option Lwt.t
+  val delete : client:Client.t -> zone:Zone.id -> id -> (unit, string) result Lwt.t
 
   (** A declaration of a DNS record. *)
   module Spec : sig
@@ -91,14 +83,14 @@ module DnsRecord : sig
     (** A TXT record. *)
     val txt : ?ttl:int -> name:string -> string -> t
 
-    (** An A record optionally proxied through Cloudflare (defaults to false). *)
-    val a : ?ttl:int -> ?proxied:bool -> name:string -> string -> t
+    (** An A record. *)
+    val a : ?ttl:int -> name:string -> string -> t
 
-    (** An AAAA record optionally proxied through Cloudflare (defaults to false). *)
-    val aaaa : ?ttl:int -> ?proxied:bool -> name:string -> string -> t
+    (** An AAAA record. *)
+    val aaaa : ?ttl:int -> name:string -> string -> t
 
-    (** An CNAME record optionally proxied through Cloudflare (defaults to false). *)
-    val cname : ?ttl:int -> ?proxied:bool -> name:string -> string -> t
+    (** An CNAME record. *)
+    val cname : ?ttl:int -> name:string -> string -> t
 
     (** An MX record with an optional priority. *)
     val mx : ?ttl:int -> ?priority:int -> name:string -> string -> t

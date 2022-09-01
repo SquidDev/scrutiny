@@ -1,6 +1,6 @@
 open Scrutiny_infrastructure
-open Scrutiny_infrastructure_resources.File_resource
-open Scrutiny_infrastructure_resources.Service_resource
+open Scrutiny_infrastructure_resources.File
+open Scrutiny_infrastructure_resources.Service
 open Action
 open Rules
 
