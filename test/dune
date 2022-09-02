@@ -30,4 +30,9 @@
   (copy support/t.mli t_scrutiny_infrastructure.mli)))
 
 (mdx
- (libraries scrutiny.diff containers))
+ (libraries compiler-libs containers scrutiny.diff))
+
+(rule
+ (alias t_scrutiny_diff)
+ (action
+  (diff t_scrutiny_diff.md .mdx/t_scrutiny_diff.md.corrected)))

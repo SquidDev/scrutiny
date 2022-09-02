@@ -1,5 +1,4 @@
 # scrutiny.prometheus
-
 This is a rehosted version of [Mirage's Prometheus library][prometheus] with
 slight modifications to remove the dependency on cohttp.
 

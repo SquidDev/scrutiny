@@ -16,8 +16,8 @@ module State = struct
   let digest { spec; _ } = Marshal.to_string spec [] |> Digest.string |> Digest.to_hex
 end
 
-module CFResource = struct
-  let id = "cloudflare"
+module DnsResource = struct
+  let id = "dns"
 
   module Key = Infra.String
   module EdgeOptions = Infra.Unit
@@ -50,7 +50,7 @@ end
 
 let cf_module =
   Infra.Resource.make
-    (module CFResource : Infra.Resource
+    (module DnsResource : Infra.Resource
       with type Key.t = string
        and type EdgeOptions.t = unit
        and type Value.t = State.t)
