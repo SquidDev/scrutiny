@@ -1,0 +1,5 @@
+(library
+ (name eio_process)
+ (public_name scrutiny.eio_process)
+ (synopsis "Spawn processes with eio.")
+ (libraries eio eio.core eio.unix threads unix))
