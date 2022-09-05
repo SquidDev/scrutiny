@@ -30,7 +30,22 @@
   (copy support/t.mli t_scrutiny_infrastructure.mli)))
 
 (mdx
- (libraries compiler-libs containers scrutiny.diff))
+ (libraries
+  compiler-libs
+  containers
+  curl
+  curl_eio
+  eio
+  eio_main
+  eio.core
+  eio.mock
+  logs
+  scrutiny.diff))
+
+(rule
+ (alias t_curl_eio)
+ (action
+  (diff t_curl_eio.md .mdx/t_curl_eio.md.corrected)))
 
 (rule
  (alias t_scrutiny_diff)

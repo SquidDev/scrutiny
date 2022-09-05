@@ -2,8 +2,8 @@
  (name scrutiny_infrastructure_resources_internal)
  (public_name scrutiny.infrastructure.resources_internal)
  (libraries
-  ; Core
   containers
+  digestif
   fmt
   fpath
   logs
@@ -12,9 +12,9 @@
   result
   scrutiny.diff
   scrutiny.infrastructure
+  scrutiny.systemd
   yojson
-  digestif
-  scrutiny.systemd)
+  unix)
  (modules directory_resource file_mod file_resource service_resource user)
  (preprocess
   (pps lwt_ppx ppx_yojson_conv)))
@@ -24,15 +24,16 @@
  (public_name scrutiny.infrastructure.resources)
  (libraries
   fmt
-  lwt
-  scrutiny.diff
-  result
-  scrutiny.infrastructure
-  scrutiny.infrastructure.resources_internal
-  yojson
   fpath
   jingoo
-  scrutiny.dns)
+  lwt
+  result
+  scrutiny.diff
+  scrutiny.dns
+  scrutiny.infrastructure
+  scrutiny.infrastructure.resources_internal
+  unix
+  yojson)
  (modules dns_resource scrutiny_infrastructure_resources)
  (preprocess
   (pps lwt_ppx)))

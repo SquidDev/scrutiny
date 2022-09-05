@@ -25,6 +25,8 @@
     cmdliner
     (containers (>= 3.6))
     digestif
+    eio
+    eio.main
     fmt
     fpath
     httpaf-lwt-unix

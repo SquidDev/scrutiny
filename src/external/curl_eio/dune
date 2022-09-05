@@ -1,0 +1,5 @@
+(library
+ (name curl_eio)
+ (public_name scrutiny.curl_eio)
+ (synopsis "Asynchronous version of curl using eio.")
+ (libraries curl eio eio.core eio.unix logs unix))
