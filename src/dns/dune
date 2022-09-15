@@ -4,11 +4,11 @@
  (synopsis "Manage DNS records using various cloud-provider's APIs")
  (libraries
   curl
-  curl.lwt
+  curl_eio
+  eio
+  eio.core
   fmt
   logs
-  lwt
-  lwt.unix
   ppx_yojson_conv_lib
   result
   scrutiny.diff
@@ -16,4 +16,4 @@
   uri
   yojson)
  (preprocess
-  (pps ppx_yojson_conv lwt_ppx)))
+  (pps ppx_yojson_conv)))

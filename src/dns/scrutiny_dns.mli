@@ -10,7 +10,7 @@ type source =
 module Client : sig
   type t
 
-  val with_client : source -> (t -> 'a Lwt.t) -> 'a Lwt.t
+  val create : sw:Eio.Switch.t -> clock:Eio.Time.clock -> net:Eio.Net.t -> source -> t
 end
 
 (** Represents a unique ID of some resource. This signature is included in the definitions of actual
@@ -26,7 +26,7 @@ module Zone : sig
   include Id
 
   (** Find a zone. Returns [None] on failure. *)
-  val find : client:Client.t -> string -> (id, string) result Lwt.t
+  val find : client:Client.t -> string -> (id, string) result
 end
 
 (** A single DNS record within a zone. *)
@@ -44,7 +44,7 @@ module DnsRecord : sig
   }
 
   (** List all records in a zone. Returns [None] on failure. *)
-  val list : client:Client.t -> zone:Zone.id -> (t list, string) result Lwt.t
+  val list : client:Client.t -> zone:Zone.id -> (t list, string) result
 
   (** Create a new record, using the same fields as those defined in {!t}. Returns the created
       record's ID. *)
@@ -57,7 +57,7 @@ module DnsRecord : sig
     ?ttl:int ->
     ?priority:int ->
     unit ->
-    (id, string) result Lwt.t
+    (id, string) result
 
   (** Edit an existing record, using the same fields as those defined in {!t}. *)
   val update :
@@ -69,10 +69,10 @@ module DnsRecord : sig
     ?ttl:int ->
     ?priority:int ->
     id ->
-    (unit, string) result Lwt.t
+    (unit, string) result
 
   (** Delete a record. Returns [None] if an error occurred. *)
-  val delete : client:Client.t -> zone:Zone.id -> id -> (unit, string) result Lwt.t
+  val delete : client:Client.t -> zone:Zone.id -> id -> (unit, string) result
 
   (** A declaration of a DNS record. *)
   module Spec : sig
@@ -105,6 +105,6 @@ module DnsRecord : sig
       client:Client.t ->
       zone:Zone.id ->
       t list ->
-      ((unit, string) result * Scrutiny_diff.t) Lwt.t
+      (unit, string) result * Scrutiny_diff.t
   end
 end

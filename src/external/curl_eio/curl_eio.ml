@@ -28,7 +28,7 @@ let get_and_remove tbl key =
   | None -> None
   | Some value -> Hashtbl.remove tbl key; Some value
 
-let create ~env ~sw () =
+let create ~sw ~clock ~net:_ =
   let multi = M.create () in
   let jobs = Eio.Stream.create Int.max_int in
   Fiber.fork_daemon ~sw (fun () ->
@@ -56,7 +56,7 @@ let create ~env ~sw () =
   (* set_timer_function provides a mechanism for a one-shot timer. *)
   let timer_event = ref None in
   let wait_timer timeout () =
-    Eio.Time.sleep env#clock (float_of_int timeout /. 1000.);
+    Eio.Time.sleep clock (float_of_int timeout /. 1000.);
     timer_event := None;
     M.action_timeout multi;
     finish_pending ()

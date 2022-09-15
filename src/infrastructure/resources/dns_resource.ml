@@ -25,27 +25,30 @@ module DnsResource = struct
 
   let pp out x = Fmt.fmt "Zone %s" out x
 
-  let apply ~zone ~source ~spec () =
-    match%lwt
-      Dns.Client.with_client source (fun client ->
-          Dns.DnsRecord.Spec.sync ~dryrun:false ~client ~zone spec)
-    with
-    | Error e, _ -> Lwt.return_error e
-    | Ok (), _ -> Lwt.return_ok ()
+  let apply ~env ~zone ~source ~spec () =
+    Lwt_eio.run_eio @@ fun () ->
+    Eio.Switch.run @@ fun sw ->
+    let client = Dns.Client.create ~sw ~clock:env#clock ~net:env#net source in
 
-  let apply ~env:_ zone ({ source; spec } : State.t) () : (Infra.change, string) result Lwt.t =
-    Dns.Client.with_client source @@ fun client ->
-    match%lwt Dns.Zone.find ~client zone with
-    | Error e -> Lwt.return_error ("Cannot find zone: " ^ e)
+    let res, _diff = Dns.DnsRecord.Spec.sync ~dryrun:false ~client ~zone spec in
+    res
+
+  let apply ~env zone ({ source; spec } : State.t) () : (Infra.change, string) result Lwt.t =
+    Lwt_eio.run_eio @@ fun () ->
+    Eio.Switch.run @@ fun sw ->
+    let client = Dns.Client.create ~sw ~clock:env#clock ~net:env#net source in
+
+    match Dns.Zone.find ~client zone with
+    | Error e -> Error ("Cannot find zone: " ^ e)
     | Ok zone -> (
-        match%lwt Dns.DnsRecord.Spec.sync ~dryrun:true ~client ~zone spec with
-        | Error e, _ -> Lwt.return_error e
-        | Ok (), diff ->
-            let apply : Infra.change =
-              if Scrutiny_diff.is_empty diff then Correct
-              else NeedsChange { diff; apply = apply ~zone ~source ~spec }
-            in
-            Lwt.return_ok apply)
+      match Dns.DnsRecord.Spec.sync ~dryrun:true ~client ~zone spec with
+      | Error e, _ -> Error e
+      | Ok (), diff ->
+          let apply : Infra.change =
+            if Scrutiny_diff.is_empty diff then Correct
+            else NeedsChange { diff; apply = apply ~env ~zone ~source ~spec }
+          in
+          Ok apply)
 end
 
 let cf_module =

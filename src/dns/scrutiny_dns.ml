@@ -9,13 +9,12 @@ type source =
 module Client = struct
   type t = client
 
-  let with_client source fn =
+  let create ~sw ~clock ~net source =
+    let client = Request.create_client ~sw ~clock ~net in
     match source with
     | Porkbun { api_key; secret } ->
-        Request.with_client (fun client ->
-            let client = Porkbun.create ~client ~auth:{ api_key; secret } in
-            let client = Client ((module Porkbun), client) in
-            fn client)
+        let client = Porkbun.create ~client ~auth:{ api_key; secret } in
+        Client ((module Porkbun), client)
 end
 
 module type Id = sig
