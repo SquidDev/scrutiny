@@ -191,7 +191,127 @@ let rec drain ?switch (proc : Lwt_process.process_full) =
       if Option.fold ~none:true ~some:Lwt_switch.is_on switch then drain ?switch proc
       else Lwt.return_unit
 
-let rec run_tunnel ?switch () : unit Lwt.t =
+let executor ?switch ~input ~output () : Executor.t =
+  let counter = ref 0 in
+  let check_wait = ITbl.create 32 in
+  let apply_wait = ITbl.create 32 in
+  let keys = ITbl.create 32 in
+  Lwt_switch.check switch;
+
+  let background =
+    let rec go () =
+      match%lwt Lwt_io.read_line input with
+      | line ->
+          (match Yojson.Safe.from_string line |> to_client_of_yojson with
+          | Init _ -> Log.err (fun f -> f "Impossible: Additional init message")
+          | CheckResult { id; result } -> Lwt.wakeup_later (ITbl.find check_wait id) result
+          | ApplyResult { id; result } -> Lwt.wakeup_later (ITbl.find apply_wait id) result
+          | Log msg -> Logging.log_record keys msg
+          | exception e -> Log.err (fun f -> f "Error reading tunnel message (%a)" pp_exception e));
+          go ()
+      | exception End_of_file -> Lwt.return_unit
+    in
+    go ()
+  in
+  Lwt_switch.add_hook switch (fun () -> Lwt.cancel background; Lwt.return_unit);
+
+  let apply id =
+    Lwt_switch.check switch;
+
+    let wait, notify = Lwt.wait () in
+    ITbl.replace apply_wait id notify;
+
+    let message = Apply { id } |> yojson_of_to_server |> Yojson.Safe.to_string in
+    let%lwt () = Lwt_io.atomic (fun out -> Lwt_io.write_line out message) output in
+    wait
+  in
+
+  let check ~user resource key value options =
+    Lwt_switch.check switch;
+
+    let resource_box = AppliedResource.Boxed { resource; key; value; options; user } in
+    let id = !counter in
+    incr counter;
+    ITbl.replace keys id (PKey (resource, key));
+
+    let wait, notify = Lwt.wait () in
+    ITbl.replace check_wait id notify;
+
+    let message =
+      Check { id; resource = resource_box } |> yojson_of_to_server |> Yojson.Safe.to_string
+    in
+    let%lwt () = Lwt_io.atomic (fun out -> Lwt_io.write_line out message) output in
+    let%lwt result = wait in
+    let result =
+      result
+      |> Or_exn.map @@ function
+         | `Correct -> Executor.ECorrect
+         | `NeedsChange diff -> Executor.ENeedsChange { diff; apply = (fun () -> apply id) }
+    in
+    Lwt.return result
+  in
+  { Executor.apply = check }
+
+let executor_of_cmd ?switch setup cmd =
+  Lwt_switch.check switch;
+  let proc = Lwt_process.open_process_full (cmd.(0), cmd) in
+  Lwt_switch.add_hook switch (fun () ->
+      let%lwt _ = proc#close in
+      Lwt.return_unit);
+  Lwt.async (fun () -> drain ?switch proc);
+  match%lwt setup proc with
+  | Ok () -> Lwt.return_ok (executor ?switch ~input:proc#stdout ~output:proc#stdin ())
+  | Error e -> Lwt.return_error e
+
+let make_executor_factory ?switch () : Core.user -> Executor.t Or_exn.t Lwt.t =
+  Lwt_switch.check switch;
+
+  let current_user = Unix.getuid () in
+  let find_user = make_user_lookup () in
+  let user_tunnels = ITbl.create 4 in
+
+  let create uid =
+    let%lwt user = Lwt_unix.getpwuid uid in
+    Log.info (fun f -> f "Opening tunnel for %S (%d)" user.Unix.pw_name uid);
+    executor_of_cmd ?switch wait_for_init
+      [| "sudo"; "--user"; user.Unix.pw_name; Sys.executable_name |]
+  in
+  let memo user =
+    match ITbl.find_opt user_tunnels user with
+    | Some x -> x
+    | None ->
+        let tunnel = Or_exn.run_lwt (fun () -> create user) in
+        ITbl.replace user_tunnels user tunnel;
+        tunnel
+  in
+  let find user : Executor.t Or_exn.t Lwt.t =
+    match%lwt find_user user with
+    | Error msg -> Lwt.return (Or_exn.Error msg)
+    | Ok user ->
+        if user = current_user then Lwt.return (Or_exn.Ok Executor.local)
+        else if current_user <> 0 then
+          Lwt.return (Or_exn.Error "Cannot use different users when not root")
+        else memo user
+  in
+  find
+
+let ssh ?switch ({ sudo_pw; host; tunnel_path } : Remote.t) =
+  Lwt_switch.check switch;
+  let setup, cmd =
+    let ssh = Sys.getenv_opt "SCRUTINY_SSH" |> Option.value ~default:"ssh" in
+    match sudo_pw with
+    | None -> (wait_for_init, [| ssh; host; tunnel_path |])
+    | Some password ->
+        let prompt proc =
+          let%lwt () = Lwt_unix.sleep 0.5 (* TODO: Wait for prompt rather than sleeping. *) in
+          let%lwt () = Lwt_io.write_line proc#stdin password in
+          wait_for_init proc
+        in
+        (prompt, [| ssh; host; "sudo"; "-S"; "-p"; "sudo[scrutiny-infra-tunnel]: "; tunnel_path |])
+  in
+  executor_of_cmd ?switch setup cmd
+
+let run_tunnel ?switch () : unit Lwt.t =
   let pending_actions = ITbl.create 32 in
   let keys = PTbl.create 32 in
 
@@ -259,123 +379,3 @@ let rec run_tunnel ?switch () : unit Lwt.t =
   Logging.reporter keys (fun msg -> Lwt.async (fun () -> Log msg |> send))
   |> Executor.wrap_logger |> Logs.set_reporter;
   run ()
-
-and executor ?switch ~input ~output () : Executor.t =
-  let counter = ref 0 in
-  let check_wait = ITbl.create 32 in
-  let apply_wait = ITbl.create 32 in
-  let keys = ITbl.create 32 in
-  Lwt_switch.check switch;
-
-  let background =
-    let rec go () =
-      match%lwt Lwt_io.read_line input with
-      | line ->
-          (match Yojson.Safe.from_string line |> to_client_of_yojson with
-          | Init _ -> Log.err (fun f -> f "Impossible: Additional init message")
-          | CheckResult { id; result } -> Lwt.wakeup_later (ITbl.find check_wait id) result
-          | ApplyResult { id; result } -> Lwt.wakeup_later (ITbl.find apply_wait id) result
-          | Log msg -> Logging.log_record keys msg
-          | exception e -> Log.err (fun f -> f "Error reading tunnel message (%a)" pp_exception e));
-          go ()
-      | exception End_of_file -> Lwt.return_unit
-    in
-    go ()
-  in
-  Lwt_switch.add_hook switch (fun () -> Lwt.cancel background; Lwt.return_unit);
-
-  let apply id =
-    Lwt_switch.check switch;
-
-    let wait, notify = Lwt.wait () in
-    ITbl.replace apply_wait id notify;
-
-    let message = Apply { id } |> yojson_of_to_server |> Yojson.Safe.to_string in
-    let%lwt () = Lwt_io.atomic (fun out -> Lwt_io.write_line out message) output in
-    wait
-  in
-
-  let check ~user resource key value options =
-    Lwt_switch.check switch;
-
-    let resource_box = AppliedResource.Boxed { resource; key; value; options; user } in
-    let id = !counter in
-    incr counter;
-    ITbl.replace keys id (PKey (resource, key));
-
-    let wait, notify = Lwt.wait () in
-    ITbl.replace check_wait id notify;
-
-    let message =
-      Check { id; resource = resource_box } |> yojson_of_to_server |> Yojson.Safe.to_string
-    in
-    let%lwt () = Lwt_io.atomic (fun out -> Lwt_io.write_line out message) output in
-    let%lwt result = wait in
-    let result =
-      result
-      |> Or_exn.map @@ function
-         | `Correct -> Executor.ECorrect
-         | `NeedsChange diff -> Executor.ENeedsChange { diff; apply = (fun () -> apply id) }
-    in
-    Lwt.return result
-  in
-  { Executor.apply = check }
-
-and executor_of_cmd ?switch setup cmd =
-  Lwt_switch.check switch;
-  let proc = Lwt_process.open_process_full (cmd.(0), cmd) in
-  Lwt_switch.add_hook switch (fun () ->
-      let%lwt _ = proc#close in
-      Lwt.return_unit);
-  Lwt.async (fun () -> drain ?switch proc);
-  match%lwt setup proc with
-  | Ok () -> Lwt.return_ok (executor ?switch ~input:proc#stdout ~output:proc#stdin ())
-  | Error e -> Lwt.return_error e
-
-and make_executor_factory ?switch () : Core.user -> Executor.t Or_exn.t Lwt.t =
-  Lwt_switch.check switch;
-
-  let current_user = Unix.getuid () in
-  let find_user = make_user_lookup () in
-  let user_tunnels = ITbl.create 4 in
-
-  let create uid =
-    let%lwt user = Lwt_unix.getpwuid uid in
-    Log.info (fun f -> f "Opening tunnel for %S (%d)" user.Unix.pw_name uid);
-    executor_of_cmd ?switch wait_for_init
-      [| "sudo"; "--user"; user.Unix.pw_name; Sys.executable_name |]
-  in
-  let memo user =
-    match ITbl.find_opt user_tunnels user with
-    | Some x -> x
-    | None ->
-        let tunnel = Or_exn.run_lwt (fun () -> create user) in
-        ITbl.replace user_tunnels user tunnel;
-        tunnel
-  in
-  let find user : Executor.t Or_exn.t Lwt.t =
-    match%lwt find_user user with
-    | Error msg -> Lwt.return (Or_exn.Error msg)
-    | Ok user ->
-        if user = current_user then Lwt.return (Or_exn.Ok Executor.local)
-        else if current_user <> 0 then
-          Lwt.return (Or_exn.Error "Cannot use different users when not root")
-        else memo user
-  in
-  find
-
-let ssh ?switch ({ sudo_pw; host; tunnel_path } : Remote.t) =
-  Lwt_switch.check switch;
-  let setup, cmd =
-    let ssh = Sys.getenv_opt "SCRUTINY_SSH" |> Option.value ~default:"ssh" in
-    match sudo_pw with
-    | None -> (wait_for_init, [| ssh; host; tunnel_path |])
-    | Some password ->
-        let prompt proc =
-          let%lwt () = Lwt_unix.sleep 0.5 (* TODO: Wait for prompt rather than sleeping. *) in
-          let%lwt () = Lwt_io.write_line proc#stdin password in
-          wait_for_init proc
-        in
-        (prompt, [| ssh; host; "sudo"; "-S"; "-p"; "sudo[scrutiny-infra-tunnel]: "; tunnel_path |])
-  in
-  executor_of_cmd ?switch setup cmd

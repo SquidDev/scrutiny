@@ -1,6 +1,6 @@
 (** Utilities for spawning new processes under eio. *)
 
-(** {1. Basic process manipulation }*)
+(** {1 Basic process manipulation} *)
 
 (** A handle to a currently running process. *)
 type t
@@ -24,7 +24,7 @@ val status : t -> Unix.process_status option
 (** Kill a process with the provided signal. *)
 val kill : signal:int -> t -> unit
 
-(** {1. Process input/output}*)
+(** {1 Process input/output} *)
 
 type channels = {
   stdin : Eio.Flow.sink;
