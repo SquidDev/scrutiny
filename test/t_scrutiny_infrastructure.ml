@@ -80,7 +80,9 @@ let run_rules ?(timeout = 10.0) ~name rules =
     let* _ = with_remote remote rules in
     pure ()
   in
-  match%lwt with_timeout ~timeout @@ fun () -> apply rules with
+
+  let env = Eio.Fiber.get current_env |> Option.get in
+  match%lwt with_timeout ~timeout @@ fun () -> apply ~env rules with
   | Error e -> Alcotest.fail e
   | Ok { failed = 0; changed; _ } -> Lwt.return changed
   | Ok { failed = n; _ } -> Alcotest.failf "%d rules failed to apply" n

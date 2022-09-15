@@ -98,7 +98,7 @@ module File = struct
     in
     File_mod.apply ~current:(Option.map (fun x -> x.file_mod) current) ~target:target.file_mod path
 
-  let apply path (target : FileState.t) () : (Infra.change, string) result Lwt.t =
+  let apply ~env:_ path (target : FileState.t) () : (Infra.change, string) result Lwt.t =
     let%lwt current = get_current_state path and target' = state_to_partial target in
     match (current, target') with
     | Error e, _ | _, Error e -> Lwt.return_error e

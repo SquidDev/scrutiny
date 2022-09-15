@@ -58,11 +58,11 @@ type t = {
 }
 
 module LocalExecutor = struct
-  let apply_basic (type key value option) (resource : (key, value, option) Resource.t) key value
-      option : change Or_exn.t Lwt.t =
+  let apply_basic (type key value option) ~env (resource : (key, value, option) Resource.t) key
+      value option : change Or_exn.t Lwt.t =
     let module R = (val resource) in
     let wrap fn = PartialKey.with_context (PKey (resource, key)) @@ fun () -> Or_exn.run_lwt fn in
-    let%lwt result = wrap (fun () -> R.apply key value option) in
+    let%lwt result = wrap (fun () -> R.apply ~env key value option) in
     let result =
       result
       |> Or_exn.map @@ function
@@ -71,10 +71,13 @@ module LocalExecutor = struct
     in
     Lwt.return result
 
-  let apply ~(user : user) resource key value option =
-    match user with
-    | `Current -> apply_basic resource key value option
-    | `Name _ | `Id _ -> Lwt.return (Or_exn.Error "Cannot use different users on local executor.")
+  let mk ~env : t =
+    let apply ~(user : user) resource key value option =
+      match user with
+      | `Current -> apply_basic ~env resource key value option
+      | `Name _ | `Id _ -> Lwt.return (Or_exn.Error "Cannot use different users on local executor.")
+    in
+    { apply }
 end
 
-let local : t = { apply = LocalExecutor.apply }
+let local = LocalExecutor.mk

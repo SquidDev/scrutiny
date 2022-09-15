@@ -292,7 +292,7 @@ let executor_of_cmd ?switch setup cmd =
   | Ok () -> Lwt.return_ok (executor ?switch ~input:channels.stdout ~output:channels.stdin ())
   | Error e -> Lwt.return_error e
 
-let make_executor_factory ?switch () : Core.user -> Executor.t Or_exn.t Lwt.t =
+let make_executor_factory ~env ?switch () : Core.user -> Executor.t Or_exn.t Lwt.t =
   Lwt_switch.check switch;
 
   let current_user = Unix.getuid () in
@@ -313,11 +313,12 @@ let make_executor_factory ?switch () : Core.user -> Executor.t Or_exn.t Lwt.t =
         ITbl.replace user_tunnels user tunnel;
         tunnel
   in
+  let local = Executor.local ~env in
   let find user : Executor.t Or_exn.t Lwt.t =
     match%lwt find_user user with
     | Error msg -> Lwt.return (Or_exn.Error msg)
     | Ok user ->
-        if user = current_user then Lwt.return (Or_exn.Ok Executor.local)
+        if user = current_user then Lwt.return (Or_exn.Ok local)
         else if current_user <> 0 then
           Lwt.return (Or_exn.Error "Cannot use different users when not root")
         else memo user
@@ -340,7 +341,7 @@ let ssh ?switch ({ sudo_pw; host; tunnel_path } : Remote.t) =
   in
   executor_of_cmd ?switch setup cmd
 
-let run_tunnel ?switch () : unit Lwt.t =
+let run_tunnel ~env ?switch () : unit Lwt.t =
   let pending_actions = ITbl.create 32 in
   let keys = PTbl.create 32 in
 
@@ -352,7 +353,7 @@ let run_tunnel ?switch () : unit Lwt.t =
   in
   let check_resource id (AppliedResource.Boxed { resource; key; value; options; user }) =
     let%lwt result =
-      match%lwt run_as_user user with
+      match%lwt run_as_user ~env user with
       | Error msg -> Lwt.return (Or_exn.Error msg)
       | Exception msg -> Lwt.return (Or_exn.Exception msg)
       | Ok executor -> executor.apply ~user:`Current resource key value options

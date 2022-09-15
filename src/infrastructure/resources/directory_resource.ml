@@ -37,7 +37,7 @@ module Dir = struct
     | Error e, _ | _, Error e -> Lwt.return_error e
     | Ok user, Ok group -> Lwt.return_ok { File_mod.user; group; perms }
 
-  let apply path (target : DirState.t) () : (Infra.change, string) result Lwt.t =
+  let apply ~env:_ path (target : DirState.t) () : (Infra.change, string) result Lwt.t =
     let%lwt current = get_state path and target = state_to_partial target in
     match (current, target) with
     | Error e, _ | _, Error e -> Lwt.return_error e

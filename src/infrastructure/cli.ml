@@ -264,7 +264,7 @@ let main rules =
       Lwt_eio.with_event_loop ~clock:env#clock @@ fun _token ->
       Lwt_eio.run_lwt @@ fun () ->
       run_with_progress active_keys ~total:(List.length rules) @@ fun progress ->
-      Lwt_switch.with_switch @@ fun switch -> Runner.apply ~switch ~dry_run ~progress rules
+      Lwt_switch.with_switch @@ fun switch -> Runner.apply ~env ~switch ~dry_run ~progress rules
     in
     match ok with
     | Error err ->

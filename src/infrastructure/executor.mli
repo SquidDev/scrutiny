@@ -34,4 +34,4 @@ type t = {
 }
 
 (** An executor which applies actions to the local machine. *)
-val local : t
+val local : env:Eio.Stdenv.t -> t

@@ -16,3 +16,4 @@ let with_temp ?(prefix = "scrutiny") ?(suffix = "") fn =
     (fun () -> try%lwt Lwt_unix.unlink file with Unix.Unix_error _ -> Lwt.return_unit)
 
 let with_timeout ~timeout fn = Lwt_unix.with_timeout timeout fn
+let current_env : Eio.Stdenv.t Eio.Fiber.key = Eio.Fiber.create_key ()

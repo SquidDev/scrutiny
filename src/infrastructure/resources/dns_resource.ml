@@ -33,7 +33,7 @@ module DnsResource = struct
     | Error e, _ -> Lwt.return_error e
     | Ok (), _ -> Lwt.return_ok ()
 
-  let apply zone ({ source; spec } : State.t) () : (Infra.change, string) result Lwt.t =
+  let apply ~env:_ zone ({ source; spec } : State.t) () : (Infra.change, string) result Lwt.t =
     Dns.Client.with_client source @@ fun client ->
     match%lwt Dns.Zone.find ~client zone with
     | Error e -> Lwt.return_error ("Cannot find zone: " ^ e)

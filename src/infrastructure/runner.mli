@@ -11,6 +11,7 @@ type progress = {
 
 (** Apply a batch of rules. *)
 val apply :
+  env:Eio.Stdenv.t ->
   ?progress:progress ->
   ?switch:Lwt_switch.t ->
   ?dry_run:bool ->
