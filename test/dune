@@ -4,19 +4,22 @@
   alcotest
   alcotest-lwt
   containers
+  eio
+  eio_main
+  eio.core
+  eio.unix
   fmt
   fpath
   logs
   logs.fmt
   lwt
-  lwt.unix
-  eio
-  eio_main
-  eio.core
   lwt_eio
+  lwt.unix
   scrutiny.infrastructure
   scrutiny.infrastructure.resources
   unix)
+ (modules
+  (:standard \ mdx_support))
  (preprocess
   (pps lwt_ppx))
  (deps
@@ -33,18 +36,43 @@
  (action
   (copy support/t.mli t_scrutiny_infrastructure.mli)))
 
-(mdx
+(library
+ (name mdx_support)
+ (modules mdx_support)
  (libraries
   compiler-libs
   containers
+  cstruct
   curl
   curl_eio
   eio
   eio_main
   eio.core
   eio.mock
+  eio.unix
   logs
-  scrutiny.diff))
+  scrutiny.diff
+  scrutiny.rpc
+  unix))
+
+(mdx
+ (libraries
+  compiler-libs
+  containers
+  cstruct
+  curl
+  curl_eio
+  eio
+  eio_main
+  eio.core
+  eio.mock
+  eio.unix
+  logs
+  scrutiny.diff
+  scrutiny.rpc
+  unix)
+ (deps mdx_support.ml mdx_support.a)
+ (preludes mdx_support.ml))
 
 (rule
  (alias t_curl_eio)
@@ -55,3 +83,8 @@
  (alias t_scrutiny_diff)
  (action
   (diff t_scrutiny_diff.md .mdx/t_scrutiny_diff.md.corrected)))
+
+(rule
+ (alias t_scrutiny_rpc)
+ (action
+  (diff t_scrutiny_rpc.md .mdx/t_scrutiny_rpc.md.corrected)))

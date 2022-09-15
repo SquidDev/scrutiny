@@ -1,0 +1,16 @@
+(library
+ (name scrutiny_rpc)
+ (public_name scrutiny.rpc)
+ (synopsis "An RPC library built on top of JSON-RPC.")
+ (libraries
+  containers
+  eio
+  eio.core
+  eio.unix
+  fmt
+  logs
+  ppx_yojson_conv_lib
+  threads
+  yojson)
+ (preprocess
+  (pps ppx_yojson_conv)))
