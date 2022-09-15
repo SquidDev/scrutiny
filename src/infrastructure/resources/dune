@@ -6,6 +6,8 @@
   digestif
   eio
   eio.core
+  eio.unix
+  eio_unix_async
   fmt
   fpath
   logs
@@ -18,7 +20,13 @@
   scrutiny.systemd
   yojson
   unix)
- (modules directory_resource file_mod file_resource service_resource user)
+ (modules
+  directory_resource
+  file_mod
+  file_resource
+  service_resource
+  path_support
+  user)
  (preprocess
   (pps lwt_ppx ppx_yojson_conv)))
 
