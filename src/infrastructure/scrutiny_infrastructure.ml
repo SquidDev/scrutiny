@@ -12,6 +12,8 @@ let apply ?dry_run rules =
   Lwt_switch.with_switch @@ fun switch -> Runner.apply ~switch ?dry_run rules
 
 let run_tunnel () =
-  Lwt_main.run (Lwt_switch.with_switch (fun switch -> Tunnel.run_tunnel ~switch ()))
+  Eio_main.run @@ fun env ->
+  Lwt_eio.with_event_loop ~clock:env#clock @@ fun _token ->
+  Lwt_eio.run_lwt @@ fun () -> Lwt_switch.with_switch (fun switch -> Tunnel.run_tunnel ~switch ())
 
 let main = Cli.main

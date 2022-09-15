@@ -28,4 +28,6 @@ let () =
   Logs.set_reporter logs_reporter;
   Random.self_init ();
 
-  Lwt_main.run @@ Alcotest_lwt.run "Scrutiny" [ T_scrutiny_infrastructure.tests ]
+  Eio_main.run @@ fun env ->
+  Lwt_eio.with_event_loop ~clock:env#clock @@ fun _token ->
+  Lwt_eio.run_lwt @@ fun () -> Alcotest_lwt.run "Scrutiny" [ T_scrutiny_infrastructure.tests ]

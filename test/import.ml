@@ -4,8 +4,9 @@ end
 
 let run_command cmd =
   Log.info (fun f -> f "Running %a" Fmt.(array ~sep:Fmt.sp string) cmd);
-  match%lwt Lwt_process.exec ("", cmd) with
-  | WEXITED 0 -> Lwt.return_unit
+  let proc = Unix.create_process cmd.(0) cmd Unix.stdin Unix.stdout Unix.stderr in
+  match%lwt Lwt_unix.wait4 [] proc with
+  | _, WEXITED 0, _ -> Lwt.return_unit
   | _ -> failwith "Process exited"
 
 let with_temp ?(prefix = "scrutiny") ?(suffix = "") fn =

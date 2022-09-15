@@ -165,9 +165,15 @@ let make_user_lookup () =
   in
   get_user_id
 
-let wait_for_init (proc : Lwt_process.process_full) =
+type channels = {
+  stdin : Lwt_io.output_channel;
+  stdout : Lwt_io.input_channel;
+  stderr : Lwt_io.input_channel;
+}
+
+let wait_for_init (proc : channels) =
   let rec gobble () =
-    match%lwt Lwt_io.read_line proc#stdout with
+    match%lwt Lwt_io.read_line proc.stdout with
     | input -> (
       match Yojson.Safe.from_string input |> to_client_of_yojson with
       | Init { version; _ } when version = "%VERSION%" -> Lwt.return_ok ()
@@ -182,8 +188,8 @@ let wait_for_init (proc : Lwt_process.process_full) =
   try%lwt Lwt_unix.with_timeout 5.0 gobble
   with Lwt_unix.Timeout -> Lwt.return_error "Tunnel failed after a timeout."
 
-let rec drain ?switch (proc : Lwt_process.process_full) =
-  match%lwt Lwt_io.read_line proc#stderr with
+let rec drain ?switch (proc : channels) =
+  match%lwt Lwt_io.read_line proc.stderr with
   | exception End_of_file -> Lwt.return_unit
   | exception Lwt_io.Channel_closed _ -> Lwt.return_unit
   | line ->
@@ -254,13 +260,36 @@ let executor ?switch ~input ~output () : Executor.t =
 
 let executor_of_cmd ?switch setup cmd =
   Lwt_switch.check switch;
-  let proc = Lwt_process.open_process_full (cmd.(0), cmd) in
+
+  let stdin_r, stdin_w = Unix.pipe ~cloexec:true ()
+  and stdout_r, stdout_w = Unix.pipe ~cloexec:true ()
+  and stderr_r, stderr_w = Unix.pipe ~cloexec:true () in
+  let proc = Unix.create_process cmd.(0) cmd stdin_r stdout_w stderr_w in
+
+  let channels =
+    {
+      stdin = Lwt_io.of_unix_fd ~mode:Lwt_io.output stdin_w;
+      stdout = Lwt_io.of_unix_fd ~mode:Lwt_io.input stdout_r;
+      stderr = Lwt_io.of_unix_fd ~mode:Lwt_io.input stderr_r;
+    }
+  in
+  let close () =
+    let%lwt () =
+      Lwt.protected
+        (Lwt.join
+           [
+             Lwt_io.close channels.stdin; Lwt_io.close channels.stdout; Lwt_io.close channels.stderr;
+           ])
+    in
+    Lwt_unix.wait4 [] proc
+  in
+
   Lwt_switch.add_hook switch (fun () ->
-      let%lwt _ = proc#close in
+      let%lwt _ = close () in
       Lwt.return_unit);
-  Lwt.async (fun () -> drain ?switch proc);
-  match%lwt setup proc with
-  | Ok () -> Lwt.return_ok (executor ?switch ~input:proc#stdout ~output:proc#stdin ())
+  Lwt.async (fun () -> drain ?switch channels);
+  match%lwt setup channels with
+  | Ok () -> Lwt.return_ok (executor ?switch ~input:channels.stdout ~output:channels.stdin ())
   | Error e -> Lwt.return_error e
 
 let make_executor_factory ?switch () : Core.user -> Executor.t Or_exn.t Lwt.t =
@@ -304,7 +333,7 @@ let ssh ?switch ({ sudo_pw; host; tunnel_path } : Remote.t) =
     | Some password ->
         let prompt proc =
           let%lwt () = Lwt_unix.sleep 0.5 (* TODO: Wait for prompt rather than sleeping. *) in
-          let%lwt () = Lwt_io.write_line proc#stdin password in
+          let%lwt () = Lwt_io.write_line proc.stdin password in
           wait_for_init proc
         in
         (prompt, [| ssh; host; "sudo"; "-S"; "-p"; "sudo[scrutiny-infra-tunnel]: "; tunnel_path |])
