@@ -1,6 +1,6 @@
-type client = unit
+type client = Curl_eio.t
 
-let with_client fn = fn ()
+let create_client = Curl_eio.create
 
 type request_body =
   | GET
@@ -16,7 +16,7 @@ let read_function body =
     idx := !idx + len;
     r
 
-let call_impl ~headers body uri =
+let call_impl ~client ~headers body uri =
   let request = Curl.init () in
   let buffer = Buffer.create 32 in
   Curl.set_url request (Uri.to_string uri);
@@ -33,17 +33,15 @@ let call_impl ~headers body uri =
       Curl.set_put request true;
       Curl.set_readfunction request (read_function body));
 
-  Lwt.finalize
-    (fun () ->
-      match%lwt Curl_lwt.perform request with
-      | CURLE_OK -> Lwt.return_ok (Curl.get_responsecode request, Buffer.contents buffer)
-      | err -> Lwt.return_error (Curl.strerror err))
-    (fun () -> Curl.cleanup request; Lwt.return_unit)
+  Fun.protect ~finally:(fun () -> Curl.cleanup request) @@ fun () ->
+  match Curl_eio.perform client request with
+  | CURLE_OK -> Ok (Curl.get_responsecode request, Buffer.contents buffer)
+  | err -> Error (Curl.strerror err)
 
-let call ~client:() ~headers body uri =
-  match%lwt call_impl ~headers body uri with
-  | Error e -> Lwt.return_error e
+let call ~client ~headers body uri =
+  match call_impl ~client ~headers body uri with
+  | Error e -> Error e
   | Ok (status, body) -> (
     match status with
-    | 200 | 201 -> Lwt.return_ok body
-    | c -> Printf.sprintf "Request failed with status %d:\n%s" c body |> Lwt.return_error)
+    | 200 | 201 -> Ok body
+    | c -> Printf.sprintf "Request failed with status %d:\n%s" c body |> Result.error)

@@ -1,6 +1,5 @@
 open Types
-open Lwt.Infix
-open Lwt.Syntax
+open Eio.Std
 module Log = (val Logs.src_log (Logs.Src.create __MODULE__))
 
 type t = {
@@ -32,9 +31,9 @@ module Updates = struct
     let (Client ((module C), client)) = client in
     Log.warn (fun f -> f "Deleting record %a" Dns_record.pp record);
     let diff () = [ (`Remove, Format.asprintf "%a" Dns_record.pp_short record) ] in
-    if dryrun then Lwt.return (true, diff ())
+    if dryrun then (true, diff ())
     else
-      C.delete ~client ~zone record.id >|= function
+      match C.delete ~client ~zone record.id with
       | Ok () -> (true, diff ())
       | Error e ->
           Log.err (fun f -> f "Error deleting record %a: %s" Dns_record.pp record e);
@@ -49,11 +48,12 @@ module Updates = struct
         (`Add, Format.asprintf "%a" pp spec);
       ]
     in
-    if dryrun then Lwt.return (true, diff ())
+    if dryrun then (true, diff ())
     else
-      C.update ~client ~zone ~type_:spec.type_ ~name:spec.name ~content:spec.content ?ttl:spec.ttl
-        record.id
-      >|= function
+      match
+        C.update ~client ~zone ~type_:spec.type_ ~name:spec.name ~content:spec.content ?ttl:spec.ttl
+          record.id
+      with
       | Ok _ -> (true, diff ())
       | Error e ->
           Log.err (fun f -> f "Error updating record %a => %a: %s" Dns_record.pp record pp spec e);
@@ -63,11 +63,12 @@ module Updates = struct
     let (Client ((module C), client)) = client in
     Log.warn (fun f -> f "Adding record %a" pp spec);
     let diff () = [ (`Add, Format.asprintf "%a" pp spec) ] in
-    if dryrun then Lwt.return (true, diff ())
+    if dryrun then (true, diff ())
     else
-      C.add ~client ~zone ~type_:spec.type_ ~name:spec.name ~content:spec.content ?ttl:spec.ttl
-        ?priority:spec.priority ()
-      >|= function
+      match
+        C.add ~client ~zone ~type_:spec.type_ ~name:spec.name ~content:spec.content ?ttl:spec.ttl
+          ?priority:spec.priority ()
+      with
       | Ok id ->
           Log.info (fun f -> f "Created record %a as %a" pp spec Dns_record.pp_id id);
           (true, diff ())
@@ -121,7 +122,7 @@ module Sync = struct
         spec records
     in
 
-    let+ ok, diff =
+    let ok, diff =
       (* We build lists of any non-inline-updatable records. These we'll just delete and update in
          parallel. *)
       let spec =
@@ -143,22 +144,22 @@ module Sync = struct
           (* Otherwise there's no point trying to find the minimal set of updates. Just clobber
              everything. We bulk-delete and then bulk-insert, just to avoid any potential race
              conditions. *)
-          let%lwt result = Lwt_list.map_p (Updates.delete ~dryrun ~client ~zone) records in
+          let result = Fiber.map (Updates.delete ~dryrun ~client ~zone) records in
           match accumulate result with
-          | false, result -> Lwt.return (false, result)
+          | false, result -> (false, result)
           | true, result ->
-              let+ result' = Lwt_list.map_p (Updates.add ~dryrun ~client ~zone) spec in
+              let result' = Fiber.map (Updates.add ~dryrun ~client ~zone) spec in
               let ok, result' = accumulate result' in
               (ok, result @ result'))
-    and+ ok', overlaps =
+    and ok', overlaps =
       (* In parallel to the above, perform in-sequence updates. *)
       SMap.to_seq overlap |> List.of_seq
-      |> Lwt_list.map_p (fun (_, (spec, record)) ->
+      |> Fiber.map (fun (_, (spec, record)) ->
              if Option.fold ~none:true ~some:(fun ttl -> ttl = record.Dns_record.ttl) spec.ttl then (
                Log.debug (fun f -> f "Nothing to do for record %a" Dns_record.pp record);
-               Lwt.return (true, [ (`Same, Format.asprintf "%a" pp spec) ]))
+               (true, [ (`Same, Format.asprintf "%a" pp spec) ]))
              else Updates.update ~dryrun ~client ~zone spec record)
-      >|= accumulate
+      |> accumulate
     in
     (ok && ok', diff @ overlaps)
 
@@ -176,20 +177,21 @@ module Sync = struct
         spec
     with
     | exception Duplicate e ->
-        Lwt.return (Error (Format.asprintf "Duplicate record %a" pp e), Scrutiny_diff.empty)
+        (Error (Format.asprintf "Duplicate record %a" pp e), Scrutiny_diff.empty)
     | spec -> (
-        C.list_records ~client ~zone >>= function
-        | Error e ->
-            Log.err (fun f -> f "Error listing records: %s" e);
-            Lwt.return (Error "Cannot list DNS records", Scrutiny_diff.empty)
-        | Ok records ->
-            let records =
-              group_domains
-                ~key:(fun x -> (x.Dns_record.type_, x.name))
-                ~value:(fun x -> x.content)
-                ~merge:(fun entry xs -> entry :: Option.value ~default:[] xs)
-                records
-            in
+      match C.list_records ~client ~zone with
+      | Error e ->
+          Log.err (fun f -> f "Error listing records: %s" e);
+          (Error "Cannot list DNS records", Scrutiny_diff.empty)
+      | Ok records ->
+          let records =
+            group_domains
+              ~key:(fun x -> (x.Dns_record.type_, x.name))
+              ~value:(fun x -> x.content)
+              ~merge:(fun entry xs -> entry :: Option.value ~default:[] xs)
+              records
+          in
+          let xs =
             KMap.merge
               (fun _ spec records ->
                 let spec = Option.value ~default:SMap.empty spec in
@@ -197,12 +199,12 @@ module Sync = struct
                 Some (spec, records))
               spec records
             |> KMap.to_seq |> List.of_seq
-            |> Lwt_list.map_p (fun (_, (spec, records)) ->
+            |> Fiber.map (fun (_, (spec, records)) ->
                    sync_domain ~dryrun ~client:client_ ~zone spec records)
-            >|= fun xs ->
-            let ok = List.for_all fst xs in
-            let diff = List.map snd xs |> List.flatten |> Scrutiny_diff.of_lines in
-            ((if ok then Ok () else Error "Some requests failed, see log"), diff))
+          in
+          let ok = List.for_all fst xs in
+          let diff = List.map snd xs |> List.flatten |> Scrutiny_diff.of_lines in
+          ((if ok then Ok () else Error "Some requests failed, see log"), diff))
 end
 
 let sync = Sync.sync

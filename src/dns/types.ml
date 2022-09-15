@@ -48,10 +48,10 @@ module type Provider = sig
   type client
 
   (** Find a zone. Returns [None] on failure. *)
-  val find_zone : client:client -> string -> Zone.id dns_result Lwt.t
+  val find_zone : client:client -> string -> Zone.id dns_result
 
   (** List all records in a zone. Returns [None] on failure. *)
-  val list_records : client:client -> zone:Zone.id -> Dns_record.t list dns_result Lwt.t
+  val list_records : client:client -> zone:Zone.id -> Dns_record.t list dns_result
 
   (** Create a new record, using the same fields as those defined in {!t}. *)
   val add :
@@ -63,7 +63,7 @@ module type Provider = sig
     ?ttl:int ->
     ?priority:int ->
     unit ->
-    Dns_record.id dns_result Lwt.t
+    Dns_record.id dns_result
 
   (** Edit an existing record, using the same fields as those defined in {!t}. *)
   val update :
@@ -75,10 +75,10 @@ module type Provider = sig
     ?ttl:int ->
     ?priority:int ->
     Dns_record.id ->
-    unit dns_result Lwt.t
+    unit dns_result
 
   (** Delete a record. Returns [None] if an error occurred. *)
-  val delete : client:client -> zone:Zone.id -> Dns_record.id -> unit dns_result Lwt.t
+  val delete : client:client -> zone:Zone.id -> Dns_record.id -> unit dns_result
 end
 
 type client = Client : (module Provider with type client = 'c) * 'c -> client

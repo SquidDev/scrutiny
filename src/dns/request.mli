@@ -1,6 +1,6 @@
 type client
 
-val with_client : (client -> 'a Lwt.t) -> 'a Lwt.t
+val create_client : sw:Eio.Switch.t -> clock:#Eio.Time.clock -> net:#Eio.Net.t -> client
 
 type request_body =
   | GET
@@ -13,4 +13,4 @@ val call :
   headers:(string * string) list ->
   request_body ->
   Uri.t ->
-  (string, string) result Lwt.t
+  (string, string) result

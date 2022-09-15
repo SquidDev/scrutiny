@@ -20,40 +20,43 @@ module Dir = struct
 
   let pp out x = Fmt.fmt "Directory %a" out Fpath.pp x
 
-  let get_state path : (File_mod.t option, string) result Lwt.t =
+  let get_state path : (File_mod.t option, string) result =
     let path_s = Fpath.to_string path in
-    match%lwt Lwt_unix.stat path_s with
+    match Eio_unix_async.stat path_s with
     | { st_kind = S_DIR; st_uid; st_gid; st_perm; _ } ->
-        Lwt.return_ok (Some { File_mod.user = st_uid; group = st_gid; perms = st_perm })
-    | _ -> Lwt.return_error "Path exists, but is not a file"
-    | exception Unix.Unix_error (Unix.ENOENT, _, _) -> Lwt.return_ok None
+        Ok (Some { File_mod.user = st_uid; group = st_gid; perms = st_perm })
+    | _ -> Error "Path exists, but is not a file"
+    | exception Unix.Unix_error (Unix.ENOENT, _, _) -> Ok None
     | exception Unix.Unix_error (code, _, _) ->
-        Lwt.return_error
-          (Format.sprintf "Failed to get current state (%s)" (Unix.error_message code))
+        Error (Format.sprintf "Failed to get current state (%s)" (Unix.error_message code))
 
   let state_to_partial { DirState.user; group; perms } =
-    let%lwt user = User.uid_of user and group = User.gid_of group in
+    let user = User.uid_of user and group = User.gid_of group in
     match (user, group) with
-    | Error e, _ | _, Error e -> Lwt.return_error e
-    | Ok user, Ok group -> Lwt.return_ok { File_mod.user; group; perms }
+    | Error e, _ | _, Error e -> Error e
+    | Ok user, Ok group -> Ok { File_mod.user; group; perms }
 
-  let apply path (target : DirState.t) () : (Infra.change, string) result Lwt.t =
-    let%lwt current = get_state path and target = state_to_partial target in
+  let apply ~env path (target : DirState.t) () : (Infra.change, string) result Lwt.t =
+    Lwt_eio.run_eio @@ fun () ->
+    let path' = Path_support.of_fpath ~env path in
+
+    let current = get_state path and target = state_to_partial target in
     match (current, target) with
-    | Error e, _ | _, Error e -> Lwt.return_error e
+    | Error e, _ | _, Error e -> Error e
     | Ok (Some current), Ok target
       when current.user = target.user && current.group = target.group
-           && current.perms = target.perms -> Lwt.return_ok Infra.Correct
+           && current.perms = target.perms -> Ok Infra.Correct
     | Ok _, Ok target ->
         let diff = Scrutiny_diff.Structure.diff File_mod.fields None (Some target) in
         let apply () =
-          match%lwt Lwt_unix.mkdir (Fpath.to_string path) target.perms with
+          Lwt_eio.run_eio @@ fun () ->
+          match Eio.Path.mkdir ~perm:target.perms path' with
+          (* TODO: mkdirs instead? What's the correct behaviour with perms? *)
           | () -> File_mod.apply ~current:None ~target path
           | exception Unix.Unix_error (code, _, _) ->
-              Lwt.return_error
-                (Format.sprintf "Failed to create directory (%s)" (Unix.error_message code))
+              Error (Format.sprintf "Failed to create directory (%s)" (Unix.error_message code))
         in
-        Lwt.return_ok (Infra.NeedsChange { diff; apply })
+        Ok (Infra.NeedsChange { diff; apply })
 end
 
 let dir_resource =

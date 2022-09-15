@@ -260,10 +260,11 @@ let main rules =
 
     (* And run everything! *)
     let ok =
-      Lwt_main.run
-      @@ run_with_progress active_keys ~total:(List.length rules)
-      @@ fun progress ->
-      Lwt_switch.with_switch @@ fun switch -> Runner.apply ~switch ~dry_run ~progress rules
+      Eio_main.run @@ fun env ->
+      Lwt_eio.with_event_loop ~clock:env#clock @@ fun _token ->
+      Lwt_eio.run_lwt @@ fun () ->
+      run_with_progress active_keys ~total:(List.length rules) @@ fun progress ->
+      Lwt_switch.with_switch @@ fun switch -> Runner.apply ~env ~switch ~dry_run ~progress rules
     in
     match ok with
     | Error err ->

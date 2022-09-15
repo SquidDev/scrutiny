@@ -24,6 +24,8 @@ type t = {
   progress : progress;
   executors : Executor.t Or_exn.t Lwt.t RemoteTbl.t;
   switch : Lwt_switch.t option;
+  local_executor : Executor.t;
+  env : Eio.Stdenv.t;
 }
 
 (** Evaluate an action, assuming all dependencies have been built.
@@ -54,10 +56,10 @@ let eval_action (type key value options) ~(resource : (key, value, options) Reso
       let%lwt value = value in
       Lwt.return_ok (value, options, changed)
 
-let get_executor ~store:{ executors; switch; _ } bkey =
+let get_executor ~store:{ executors; switch; local_executor; _ } bkey =
   let (BKey (Resource { machine; _ })) = bkey in
   match machine with
-  | Local -> Lwt.return (Or_exn.Ok Executor.local)
+  | Local -> Lwt.return (Or_exn.Ok local_executor)
   | Remote remote -> (
     match RemoteTbl.find_opt executors remote with
     | Some x -> x
@@ -154,10 +156,19 @@ type run_result = {
   failed : int;
 }
 
-let apply ?(progress = default_progress) ?switch ?(dry_run = false) (rules : Rules.rules) =
+let apply ~env ?(progress = default_progress) ?switch ?(dry_run = false) (rules : Rules.rules) =
   let total = List.length rules in
   let keys = KeyTbl.create total in
-  let store = { keys; progress; executors = RemoteTbl.create 2; switch } in
+  let store =
+    {
+      keys;
+      progress;
+      executors = RemoteTbl.create 2;
+      switch;
+      env;
+      local_executor = Executor.local ~env;
+    }
+  in
 
   let tasks =
     List.rev_map

@@ -34,7 +34,7 @@ We can make a simple http request.
 ```ocaml
 # Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
-  let client = Curl_eio.create ~env ~sw () in
+  let client = Curl_eio.create ~sw ~clock:env#clock ~net:env#net in
   get ~client "https://httpbin.org/base64/SGVsbG8sIHdvcmxkIQ==" ;;
 mdx_gen.bc: [DEBUG] Starting request to https://httpbin.org/base64/SGVsbG8sIHdvcmxkIQ==
 mdx_gen.bc: [DEBUG] Finished request to https://httpbin.org/base64/SGVsbG8sIHdvcmxkIQ==
@@ -46,7 +46,7 @@ We can make HTTP requests in parallel.
 ```ocaml
 # Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
-  let client = Curl_eio.create ~env ~sw () in
+  let client = Curl_eio.create ~sw ~clock:env#clock ~net:env#net in
   let start = Eio.Time.now env#clock in
   Eio.Fiber.pair
     (fun () -> get ~client "https://httpbin.org/delay/3")

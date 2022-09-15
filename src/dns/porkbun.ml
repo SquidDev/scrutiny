@@ -57,10 +57,10 @@ let make_request ~client:{ client; auth } (fields : (string * Yojson.Safe.t) lis
   in
   let body = `Assoc fields |> Yojson.Safe.to_string in
   let uri = Uri.make ~scheme:"https" ~host:"porkbun.com" ~path:("/api/json/v3/dns" ^ path) () in
-  let%lwt result = Request.call ~client ~headers:[] (POST body) uri in
-  Lwt.return (decode result)
+  let result = Request.call ~client ~headers:[] (POST body) uri in
+  decode result
 
-let find_zone ~client:_ zone = Lwt.return_ok (Porkbun_zone zone)
+let find_zone ~client:_ zone = Ok (Porkbun_zone zone)
 
 type record_id = string
 
@@ -98,14 +98,14 @@ let convert_record zone_id (record : dns_record) : Dns_record.t =
 
 let list_records ~client ~zone =
   let zone = get_zone zone in
-  match%lwt make_request ~client [] ("/retrieve/" ^ zone) with
-  | Error e -> Lwt.return_error e
+  match make_request ~client [] ("/retrieve/" ^ zone) with
+  | Error e -> Error e
   | Ok fields ->
       List.assoc "records" fields
       |> list_of_yojson dns_record_of_yojson
       |> List.filter (fun x -> x.type_ <> "NS")
       |> List.map (convert_record zone)
-      |> Lwt.return_ok
+      |> Result.ok
 
 (** Get the name of the domain, stripping off the root zone. *)
 let get_name ~zone name =
@@ -133,21 +133,21 @@ let make_fields ~zone ~type_ ~name ~content ?ttl ?priority () =
 let add ~client ~zone ~type_ ~name ~content ?ttl ?priority () =
   let zone = get_zone zone in
   let fields = make_fields ~zone ~type_ ~name ~content ?ttl ?priority () in
-  match%lwt make_request ~client fields ("/create/" ^ zone) with
-  | Error e -> Lwt.return_error e
+  match make_request ~client fields ("/create/" ^ zone) with
+  | Error e -> Error e
   | Ok fields ->
       let id = List.assoc "id" fields |> record_id_of_yojson in
-      Lwt.return_ok (Porkbun_record id)
+      Ok (Porkbun_record id)
 
 let update ~client ~zone ~type_ ~name ~content ?ttl ?priority id =
   let zone = get_zone zone and id = get_record id in
   let fields = make_fields ~zone ~type_ ~name ~content ?ttl ?priority () in
-  match%lwt make_request ~client fields (Printf.sprintf "/edit/%s/%s" zone id) with
-  | Error e -> Lwt.return_error e
-  | Ok _ -> Lwt.return_ok ()
+  match make_request ~client fields (Printf.sprintf "/edit/%s/%s" zone id) with
+  | Error e -> Error e
+  | Ok _ -> Ok ()
 
 let delete ~client ~zone id =
   let zone = get_zone zone and id = get_record id in
-  match%lwt make_request ~client [] (Printf.sprintf "/delete/%s/%s" zone id) with
-  | Error e -> Lwt.return_error e
-  | Ok _ -> Lwt.return_ok ()
+  match make_request ~client [] (Printf.sprintf "/delete/%s/%s" zone id) with
+  | Error e -> Error e
+  | Ok _ -> Ok ()

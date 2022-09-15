@@ -155,7 +155,7 @@ module Service = struct
         Printf.sprintf "Expecting service to be %s but is %s" target_state current_state
         |> Lwt.return_error)
 
-  let apply { ServiceName.name; scope } target change : (Infra.change, string) result Lwt.t =
+  let apply ~env:_ { ServiceName.name; scope } target change : (Infra.change, string) result Lwt.t =
     match get_desired_state change target with
     | Error e -> Lwt.return_error e
     | Ok (target_state, target_state_apply) ->
