@@ -52,19 +52,24 @@ module ProgressHelpers = struct
       ]
 
   (** A progress line which displays the current status of a particular task. *)
-  let key_line (BKey (Resource { resource; key; machine; _ })) counter =
-    let module R = (val resource) in
-    let task_name = constf "%a" R.pp key in
+  let key_line (Concrete_key.BKey key) counter =
     let task_name =
-      match machine with
-      | Local -> task_name
-      | Remote remote -> const ~color:(ansi `yellow) remote.host ++ const " » " ++ task_name
+      match key with
+      | Resource { resource; key; machine; _ } ->
+          let module R = (val resource) in
+          let task_name = constf "%a" R.pp key in
+          let task_name =
+            match machine with
+            | Local -> task_name
+            | Remote remote -> const ~color:(ansi `yellow) remote.host ++ const " » " ++ task_name
+          in
+          task_name
     in
     list [ spinner (); task_name; const "»"; string; elapsed_since counter ]
 end
 
 type active_key = {
-  key : boxed_key;
+  key : Concrete_key.boxed;
   clock : Mtime_clock.counter;
   mutable log_dirty : bool;
   mutable log : string;
@@ -150,7 +155,10 @@ let run_with_progress active_keys ~total fn =
   let progress_display =
     ProgressHelpers.progress_line ~total |> Progress.Multi.line |> Progress.Display.start
   in
-  let pkey (BKey (Resource { resource; key; _ })) = Executor.PartialKey.PKey (resource, key) in
+  let pkey (Concrete_key.BKey key) =
+    match key with
+    | Resource { resource; key; _ } -> Executor.PartialKey.PKey (resource, key)
+  in
 
   (* Unconditionally set the line. *)
   let set_line line message =
@@ -213,7 +221,7 @@ let run_with_progress active_keys ~total fn =
       Progress.Display.finalise progress_display;
       Lwt.return_unit)
 
-let main rules =
+let main rules_def =
   Printexc.record_backtrace true;
   Fmt_tty.setup_std_outputs ();
 
@@ -256,14 +264,15 @@ let main rules =
     |> Executor.wrap_logger |> Progress.instrument_logs_reporter |> Logs.set_reporter;
 
     (* Evaluate rules. *)
-    let (), rules = rules { Core.Rules.rules = []; user = `Current; machine = Local } in
+    let rules = Builder_map.create 16 in
+    rules_def { Rules.rules; user = `Current; machine = Local };
 
     (* And run everything! *)
     let ok =
       Eio_main.run @@ fun env ->
       Lwt_eio.with_event_loop ~clock:env#clock @@ fun _token ->
       Lwt_eio.run_lwt @@ fun () ->
-      run_with_progress active_keys ~total:(List.length rules) @@ fun progress ->
+      run_with_progress active_keys ~total:(Builder_map.length rules) @@ fun progress ->
       Lwt_switch.with_switch @@ fun switch -> Runner.apply ~env ~switch ~dry_run ~progress rules
     in
     match ok with

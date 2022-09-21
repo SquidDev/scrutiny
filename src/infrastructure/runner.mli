@@ -5,8 +5,8 @@ type run_result = {
 }
 
 type progress = {
-  key_start : Core.boxed_key -> unit;
-  key_done : Core.boxed_key -> unit;
+  key_start : Core.Concrete_key.boxed -> unit;
+  key_done : Core.Concrete_key.boxed -> unit;
 }
 
 (** Apply a batch of rules. *)

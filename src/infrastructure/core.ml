@@ -62,7 +62,7 @@ module Resource = struct
         and type Value.t = 'value
         and type EdgeOptions.t = 'options)
 
-  type boxed = Boxed : ('key, 'value, 'options) t -> boxed
+  type boxed = Boxed : ('key, 'value, 'options) t -> boxed [@@unboxed]
 
   let resources = ref SMap.empty
 
@@ -78,34 +78,76 @@ type machine =
   | Local
   | Remote of Remote.t
 
-type ('key, 'value, 'options) resource = {
-  resource : ('key, 'value, 'options) Resource.t;
-  key : 'key;
-  dependencies : boxed_key list;
-  value : ('value Lwt.t, 'options) action;
-  user : user;
-  machine : machine;
-}
+module Concrete_resource = struct
+  (** A resource instantiated in a specific context.
 
-and ('result, 'kind) key =
-  | Resource : ('key, 'value, 'options) resource -> (unit, [ `Resource ]) key
+      In the future I'd like to remove user/machine and make them part of the key. *)
+  type ('key, 'value, 'options) t = {
+    resource : ('key, 'value, 'options) Resource.t;
+    key : 'key;
+    user : user;
+    machine : machine;
+  }
 
-and ('value, 'options) action =
+  let hash (type key value options) ({ resource; key; _ } : (key, value, options) t) =
+    let module R = (val resource) in
+    R.Key.hash key
+
+  let equal (type k1 v1 o1 k2 v2 o2) : ((k1, v1, o1) t, (k2, v2, o2) t) Het_map.Eq.is_eq =
+   fun l r ->
+    match Het_map.Eq.by_ref l.resource r.resource with
+    | Ineq -> Ineq
+    | Eq when l.user <> r.user || l.machine != r.machine -> Ineq
+    | Eq ->
+        let module R = (val l.resource) in
+        if R.Key.equal l.key r.key then Eq else Ineq
+end
+
+(** The user-facing key fed into an action. *)
+type ('result, 'kind) key =
+  | Resource : ('key, 'value, 'options) Concrete_resource.t -> (unit, [ `Resource ]) key
+
+module Concrete_key = struct
+  (** An key instantiated for a specific context.
+
+      This takes two type parameters ['result] (the return value of this key) and ['extra] (ensures
+      the builder is consistent with the key). These are packed into a single type parameter via a
+      tuple to make it easier to work with {!Het_map}. *)
+  type 'a t =
+    | Resource :
+        ('key, 'value, 'options) Concrete_resource.t
+        -> (unit * [ `Resource of 'value * 'options ]) t
+
+  let hash (type a) : a t -> int = function
+    | Resource r -> Concrete_resource.hash r
+
+  let equal (type a b) (l : a t) (r : b t) : (a, b) Het_map.Eq.t =
+    match (l, r) with
+    | Resource l, Resource r -> (
+      match Concrete_resource.equal l r with
+      | Eq -> Eq
+      | Ineq -> Ineq)
+
+  type boxed = BKey : 'result t -> boxed [@@unboxed]
+
+  (** A key which just exposes the result. Convenient for exposing the extra data as an existential. *)
+  type 'result with_res = RKey : ('result * 'data) t -> 'result with_res [@@unboxed]
+end
+
+type ('value, 'options) action =
   | Pure : 'value -> ('value, 'options) action
-  | Need : 'options * ('result, 'kind) key -> ('result, 'options) action
+  | Need : 'options * ('result * 'extra) Concrete_key.t -> ('result, 'options) action
   | Bind : ('a, 'options) action * ('a -> 'b) -> ('b, 'options) action
   | Pair : ('a, 'options) action * ('b, 'options) action -> ('a * 'b, 'options) action
 
-and boxed_key = BKey : ('result, 'kind) key -> boxed_key
+type ('value, 'options) action_deps = {
+  edges : Concrete_key.boxed list;
+  term : ('value, 'options) action;
+}
 
 module Action = struct
-  type ('value, 'options) main_action = {
-    edges : boxed_key list;
-    term : ('value, 'options) action;
-  }
-
   type ('value, 'options) t =
-    (module EdgeOptions with type t = 'options) -> ('value, 'options) main_action
+    (module EdgeOptions with type t = 'options) -> ('value, 'options) action_deps
 
   let ( let+ ) (x : ('a, 'options) t) (f : 'a -> 'b) options =
     let x = x options in
@@ -115,15 +157,33 @@ module Action = struct
     let x = x m and y = y m in
     { edges = x.edges @ y.edges; term = Pair (x.term, y.term) }
 
+  let instantiate_key (type result kind) : (result, kind) key -> result Concrete_key.with_res =
+    function
+    | Resource r -> RKey (Resource r)
+
   let need (type options) ?options key (module E : EdgeOptions with type t = options) :
-      ('value, options) main_action =
+      ('value, options) action_deps =
+    let (RKey key) = instantiate_key key in
     { edges = [ BKey key ]; term = Need (Option.value ~default:E.default options, key) }
 
   let value x _ = { edges = []; term = Pure x }
 end
 
+(** Information needed to build a key. This has an identical structure to {!Concrete_key}. *)
+module Key_builder = struct
+  type 'a t =
+    | Resource :
+        ('value Lwt.t, 'options) action_deps
+        -> (unit * [ `Resource of 'value * 'options ]) t
+
+  let dependencies (type a) : a t -> _ = function
+    | Resource r -> r.edges
+end
+
+module Builder_map = Het_map.Make (Concrete_key) (Key_builder)
+
 module Rules = struct
-  type rules = boxed_key list
+  type rules = Builder_map.t
 
   type context = {
     rules : rules;
@@ -131,47 +191,28 @@ module Rules = struct
     machine : machine;
   }
 
-  type ('ctx, 'a) t = context -> 'a * rules
+  type ('ctx, 'a) t = context -> 'a
 
-  let ( let* ) (x : ('ctx, 'a) t) (f : 'a -> ('ctx, 'b) t) context : 'b * rules =
-    let x, rules = x context in
-    f x { context with rules }
+  let ( let* ) (x : ('ctx, 'a) t) (f : 'a -> ('ctx, 'b) t) context : 'b =
+    let x = x context in
+    f x context
 
-  let pure x context : 'a * rules = (x, context.rules)
+  let pure x _ = x
 
   let resource (type key value options) (resource : (key, value, options) Resource.t) key
-      (value : unit -> (value Lwt.t, options) Action.t) (context : context) : _ * rules =
+      (value : unit -> (value Lwt.t, options) Action.t) (context : context) : _ =
     let module R = (val resource) in
     let value = value () (module R.EdgeOptions) in
-    let key =
-      Resource
-        {
-          resource;
-          key;
-          value = value.term;
-          dependencies = value.edges;
-          user = context.user;
-          machine = context.machine;
-        }
-    in
-    (key, BKey key :: context.rules)
+    let key = { Concrete_resource.resource; key; user = context.user; machine = context.machine } in
+    Builder_map.set context.rules (Resource key) (Resource value);
+    Resource key
 
-  let with_user user (f : unit -> ([ `User ], 'a) t) context : 'a * rules =
+  let with_user user (f : unit -> ([ `User ], 'a) t) context : 'a =
     f () { context with user = `Name user }
 
-  let with_user_uid user (f : unit -> ([ `User ], 'a) t) context : 'a * rules =
+  let with_user_uid user (f : unit -> ([ `User ], 'a) t) context : 'a =
     f () { context with user = `Id user }
 
-  let with_remote remote (f : unit -> ([ `Remote ], 'a) t) context : 'a * rules =
+  let with_remote remote (f : unit -> ([ `Remote ], 'a) t) context : 'a =
     f () { context with machine = Remote remote }
 end
-
-module KeyTbl = Hashtbl.Make (struct
-  type t = boxed_key
-
-  let equal (BKey (Resource l)) (BKey (Resource r)) = Obj.repr l == Obj.repr r
-
-  let hash (BKey (Resource { resource; key; _ })) =
-    let module R = (val resource) in
-    R.Key.hash key
-end)

@@ -1,6 +1,13 @@
 open Core
 module Log = (val Logs.src_log (Logs.Src.create __MODULE__))
 
+module Key_set =
+  Het_map.Make
+    (Concrete_key)
+    (struct
+      type 'a t = unit
+    end)
+
 module RemoteTbl = Hashtbl.Make (struct
   type t = Remote.t
 
@@ -8,24 +15,29 @@ module RemoteTbl = Hashtbl.Make (struct
   let equal = ( == )
 end)
 
-type state =
-  | Pending of (bool, unit) result Lwt.t
-  | Finished of (bool, unit) result
+type 'a state =
+  | Pending of (bool * 'a, unit) result Lwt.t
+  | Finished of (bool * 'a, unit) result
+
+module Packed_state = struct
+  type 'a t = State : 'a state -> ('a * 'e) t [@@unboxed]
+end
+
+module State_map = Het_map.Make (Concrete_key) (Packed_state)
 
 type progress = {
-  key_start : boxed_key -> unit;
-  key_done : boxed_key -> unit;
+  key_start : Core.Concrete_key.boxed -> unit;
+  key_done : Core.Concrete_key.boxed -> unit;
 }
 
 let default_progress = { key_start = (fun _ -> ()); key_done = (fun _ -> ()) }
 
 type t = {
-  keys : state KeyTbl.t;
+  keys : State_map.t;
   progress : progress;
   executors : Executor.t Or_exn.t Lwt.t RemoteTbl.t;
   switch : Lwt_switch.t option;
   local_executor : Executor.t;
-  env : Eio.Stdenv.t;
 }
 
 (** Evaluate an action, assuming all dependencies have been built.
@@ -37,12 +49,13 @@ let eval_action (type key value options) ~(resource : (key, value, options) Reso
   let module R = (val resource) in
   let rec go : type ret. (ret, options) action -> (ret * options * bool, unit) result = function
     | Pure v -> Ok (v, R.EdgeOptions.default, false)
-    | Need (options, (Resource _ as key)) -> (
-      match KeyTbl.find store.keys (BKey key) with
-      | Pending _ -> failwith "Impossible: Key not ready"
-      | Finished (Error ()) -> Error ()
-      | Finished (Ok changed) ->
-          Ok ((), (if changed then options else R.EdgeOptions.default), changed))
+    | Need (options, key) -> (
+        let (State state) = State_map.get_exn store.keys key in
+        match state with
+        | Pending _ -> failwith "Impossible: Key not ready"
+        | Finished (Error ()) -> Error ()
+        | Finished (Ok (changed, ret)) ->
+            Ok (ret, (if changed then options else R.EdgeOptions.default), changed))
     | Bind (x, f) -> go x |> Result.map (fun (res, options, changed) -> (f res, options, changed))
     | Pair (l, r) -> (
       match (go l, go r) with
@@ -56,8 +69,7 @@ let eval_action (type key value options) ~(resource : (key, value, options) Reso
       let%lwt value = value in
       Lwt.return_ok (value, options, changed)
 
-let get_executor ~store:{ executors; switch; local_executor; _ } bkey =
-  let (BKey (Resource { machine; _ })) = bkey in
+let get_executor ~store:{ executors; switch; local_executor; _ } { Concrete_resource.machine; _ } =
   match machine with
   | Local -> Lwt.return (Or_exn.Ok local_executor)
   | Remote remote -> (
@@ -69,8 +81,10 @@ let get_executor ~store:{ executors; switch; local_executor; _ } bkey =
         tunnel)
 
 (** Evaluate a rule, assuming all dependencies have been built. *)
-let eval_rule ~dry_run ~store bkey =
-  let (BKey (Resource { resource; key; value; user; _ })) = bkey in
+let eval_resource (type key value options) ~dry_run ~store
+    (cresource : (key, value, options) Concrete_resource.t) builder =
+  let { Concrete_resource.resource; key; user; _ } = cresource in
+  let value = builder.term in
   let module R = (val resource) in
   let%lwt result =
     Executor.PartialKey.with_context (PKey (resource, key)) @@ fun () ->
@@ -86,7 +100,7 @@ let eval_rule ~dry_run ~store bkey =
         let ( let>> ) = Lwt_result.bind in
         let ( <?> ) action (err, exn) = Or_exn.log (module Log) action (err, exn) in
         let>> executor =
-          get_executor ~store bkey <?> ("Failed to get executor", "Exception getting executor")
+          get_executor ~store cresource <?> ("Failed to get executor", "Exception getting executor")
         in
         let>> result =
           executor.apply ~user resource key value options
@@ -95,23 +109,25 @@ let eval_rule ~dry_run ~store bkey =
         match result with
         | ECorrect ->
             Log.debug (fun f -> f "No changes needed");
-            Lwt.return_ok (value, false)
+            Lwt.return_ok (false, ())
         | ENeedsChange { diff; apply } ->
             Log.info (fun f -> f "Applying %a:@\n%a" R.pp key (Scrutiny_diff.pp ~full:false) diff);
-            if dry_run then Lwt.return_ok (value, true)
+            if dry_run then Lwt.return_ok (true, ())
             else
               let>> () = apply () <?> ("Failed to apply changes", "Exception applying changes") in
-              Lwt.return_ok (value, true))
+              Lwt.return_ok (true, ()))
   in
-  Lwt.return (Result.map snd result)
+  Lwt.return result
 
-let build_rule ~dry_run ~store bkey resolve =
-  let (BKey (Resource { dependencies; _ })) = bkey in
+let build_rule (type a) ~dry_run ~store (key : a Concrete_key.t) (builder : a Key_builder.t) resolve
+    =
+  let dependencies = Key_builder.dependencies builder in
   let rec eval_deps = function
     | [] -> Lwt.return_ok ()
-    | dep :: deps -> (
+    | Concrete_key.BKey dep :: deps -> (
+        let (State state) = State_map.get_exn store.keys dep in
         let%lwt result =
-          match KeyTbl.find store.keys dep with
+          match state with
           | Finished f -> Lwt.return f
           | Pending x -> x
         in
@@ -122,25 +138,31 @@ let build_rule ~dry_run ~store bkey resolve =
 
   let%lwt result =
     match%lwt eval_deps dependencies with
-    | Ok () -> store.progress.key_start bkey; eval_rule ~dry_run ~store bkey
+    | Ok () -> (
+        store.progress.key_start (BKey key);
+        match (key, builder) with
+        | Resource key, Resource builder -> eval_resource ~dry_run ~store key builder)
     | Error () -> Lwt.return_error ()
   in
 
-  KeyTbl.replace store.keys bkey (Finished result);
+  State_map.set store.keys key (State (Finished result));
   Lwt.wakeup_later resolve result;
-  store.progress.key_done bkey;
+  store.progress.key_done (BKey key);
   Lwt.return_unit
 
-let check_graph is_present rules =
-  let visited = KeyTbl.create (List.length rules) in
-  let rec go stack node =
-    let (BKey (Resource { dependencies; _ })) = node in
-    if KeyTbl.mem visited node then Ok ()
-    else if not (is_present node) then Error "Missing node in rule list"
-    else if List.memq node stack then Error "Loop in dependency graph"
+let check_graph rules =
+  let visited = Key_set.create (Builder_map.length rules) in
+  let rec go stack (BKey key as bkey : Concrete_key.boxed) =
+    if Key_set.mem visited key then Ok ()
+    else if not (Builder_map.mem rules key) then Error "Missing node in rule list"
+    else if
+      List.exists
+        (fun (Concrete_key.BKey other) -> Concrete_key.equal key other |> Het_map.Eq.to_bool)
+        stack
+    then Error "Loop in dependency graph"
     else (
-      KeyTbl.replace visited node true;
-      go_all (node :: stack) dependencies)
+      Key_set.set visited key ();
+      Builder_map.get_exn rules key |> Key_builder.dependencies |> go_all (bkey :: stack))
   and go_all stack = function
     | [] -> Ok ()
     | x :: xs -> (
@@ -148,7 +170,17 @@ let check_graph is_present rules =
       | Ok () -> go_all stack xs
       | Error _ as e -> e)
   in
-  go_all [] rules
+  let rec go_all_s stack s =
+    match s () with
+    | Seq.Nil -> Ok ()
+    | Cons (x, xs) -> (
+      match go stack x with
+      | Ok () -> go_all_s stack xs
+      | Error _ as e -> e)
+  in
+  Builder_map.to_seq rules
+  |> Seq.map (fun (Builder_map.Packed (k, _)) -> Concrete_key.BKey k)
+  |> go_all_s []
 
 type run_result = {
   total : int;
@@ -157,38 +189,32 @@ type run_result = {
 }
 
 let apply ~env ?(progress = default_progress) ?switch ?(dry_run = false) (rules : Rules.rules) =
-  let total = List.length rules in
-  let keys = KeyTbl.create total in
+  let total = Builder_map.length rules in
+  let keys = State_map.create total in
   let store =
-    {
-      keys;
-      progress;
-      executors = RemoteTbl.create 2;
-      switch;
-      env;
-      local_executor = Executor.local ~env;
-    }
+    { keys; progress; executors = RemoteTbl.create 2; switch; local_executor = Executor.local ~env }
   in
 
   let tasks =
-    List.rev_map
-      (fun key ->
-        let task, resolve = Lwt.wait () in
-        KeyTbl.replace keys key (Pending task);
-        fun () -> build_rule ~dry_run ~store key resolve)
-      rules
+    Builder_map.to_seq rules
+    |> Seq.map (fun (Builder_map.Packed (key, builder)) ->
+           let task, resolve = Lwt.wait () in
+           State_map.set keys key (State (Pending task));
+           fun () -> build_rule ~dry_run ~store key builder resolve)
+    |> CCSeq.to_rev_list
   in
-  match check_graph (KeyTbl.mem keys) rules with
+  match check_graph rules with
   | Error e -> Lwt.return_error e
   | Ok () ->
       let%lwt () = Lwt_list.iter_p (fun f -> f ()) tasks in
       let changed, failed =
-        KeyTbl.fold
-          (fun _ result (changed, failed) ->
-            match result with
-            | Finished (Ok false) -> (changed, failed)
-            | Finished (Ok true) -> (changed + 1, failed)
-            | Finished (Error _) | Pending _ -> (changed, failed + 1))
-          keys (0, 0)
+        State_map.to_seq keys
+        |> Seq.fold_left
+             (fun (changed, failed) (State_map.Packed (_, State result)) ->
+               match result with
+               | Finished (Ok (false, _)) -> (changed, failed)
+               | Finished (Ok (true, _)) -> (changed + 1, failed)
+               | Finished (Error _) | Pending _ -> (changed, failed + 1))
+             (0, 0)
       in
-      Lwt.return_ok { changed; failed; total = List.length rules }
+      Lwt.return_ok { changed; failed; total = Builder_map.length rules }
