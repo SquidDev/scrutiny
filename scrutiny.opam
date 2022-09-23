@@ -11,20 +11,23 @@ homepage: "https://github.com/squiddev/scrutiny"
 bug-reports: "https://github.com/squiddev/scrutiny/issues"
 depends: [
   "dune" {>= "3.3"}
-  "ocaml" {>= "4.14"}
+  "ocaml" {>= "5.0"}
   "ocamlformat" {dev}
   "ocaml-lsp-server" {dev}
+  "base-threads"
+  "base-unix"
   "cmdliner"
   "containers" {>= "3.6"}
   "digestif"
   "eio"
-  "eio.main"
+  "eio_main"
   "fmt"
   "fpath"
   "httpaf-lwt-unix"
   "jingoo"
   "logs"
   "lwt"
+  "lwt_eio"
   "lwt_ppx"
   "lwt-dllist"
   "ocurl"

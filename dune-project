@@ -15,24 +15,27 @@
   (synopsis "Bits and bobs for wrangling my server")
   (description "A home grown infrastructure management and monitoring toolkit, because I'm silly.")
   (depends
-    (ocaml (>= 4.14))
+    (ocaml (>= 5.0))
 
     ;; Build-time
     (ocamlformat :dev)
     (ocaml-lsp-server :dev)
 
     ; Core
+    base-threads
+    base-unix
     cmdliner
     (containers (>= 3.6))
     digestif
     eio
-    eio.main
+    eio_main
     fmt
     fpath
     httpaf-lwt-unix
     jingoo
     logs
     lwt
+    lwt_eio
     lwt_ppx
     lwt-dllist
     ocurl

@@ -2,4 +2,4 @@
  (name eio_unix_async)
  (public_name scrutiny.eio_unix_async)
  (synopsis "Runs Unix functions asynchronously off-thread.")
- (libraries eio eio.core logs mtime mtime.clock.os threads unix))
+ (libraries eio eio.core logs mtime mtime.clock.os threads.posix unix))
