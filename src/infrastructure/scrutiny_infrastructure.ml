@@ -13,6 +13,7 @@ let apply ~env ?dry_run rule_def =
   Runner.apply ~env ?dry_run rules
 
 let run_tunnel () =
+  Cli.setup_logs ~extra_level:Debug Debug;
   Eio_main.run @@ fun env ->
   Lwt_eio.with_event_loop ~clock:env#clock @@ fun _token -> Tunnel.run_tunnel ~env ()
 

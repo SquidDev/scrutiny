@@ -233,6 +233,16 @@ let progress_tracker ~sw ~clock ~active_keys ~total =
   Switch.on_release sw (fun () -> Progress.Display.finalise progress_display);
   progress
 
+let setup_logs ?(extra_level = Logs.Warning) level =
+  Printexc.record_backtrace true;
+  Logs.set_level ~all:true (Some level);
+  Logs.Src.list ()
+  |> List.iter (fun src ->
+         match Logs.Src.name src with
+         | "piaf.client" | "piaf.http" | "piaf.openssl" -> Logs.Src.set_level src (Some extra_level)
+         | "eio_linux" -> Logs.Src.set_level src None
+         | _ -> ())
+
 let main rules_def =
   Printexc.record_backtrace true;
   Fmt_tty.setup_std_outputs ();
@@ -254,8 +264,6 @@ let main rules_def =
       value @@ flag_all @@ info ~doc:"Print more verbose log messages." [ "verbose"; "v" ]
     in
 
-    let active_keys = PTbl.create 16 in
-
     (* Set up logging. We parse the verbose flag to actually have two logging levels here, as some
        components are pretty noisy. *)
     let (level, extra_level) : Logs.level * Logs.level =
@@ -264,15 +272,13 @@ let main rules_def =
       | 1 -> (Info, Warning)
       | _ -> (Debug, Debug)
     in
-    Logs.set_level ~all:true (Some level);
-    Logs.Src.list ()
-    |> List.iter (fun src ->
-           match Logs.Src.name src with
-           | "piaf.client" | "piaf.http" | "piaf.openssl" ->
-               Logs.Src.set_level src (Some extra_level)
-           | "eio_linux" -> Logs.Src.set_level src None
-           | _ -> ());
+    setup_logs ~extra_level level;
 
+    Eio_main.run @@ fun env ->
+    Lwt_eio.with_event_loop ~clock:env#clock @@ fun _token ->
+    let active_keys = PTbl.create 16 in
+
+    (* Set up log handlers. We do this inside eio so that the effect handlers are installed. *)
     LogsHelpers.(combine_reporters (capturing_reporter active_keys) (logs_reporter (level = Debug)))
     |> Executor.wrap_logger |> Progress.instrument_logs_reporter |> Logs.set_reporter;
 
@@ -282,8 +288,6 @@ let main rules_def =
 
     (* And run everything! *)
     let ok =
-      Eio_main.run @@ fun env ->
-      Lwt_eio.with_event_loop ~clock:env#clock @@ fun _token ->
       Switch.run @@ fun sw ->
       let progress =
         progress_tracker ~sw ~clock:env#clock ~active_keys ~total:(Builder_map.length rules)

@@ -400,8 +400,6 @@ let run_tunnel ~env () : unit =
     | exception End_of_file -> Lwt.return_unit
   in
 
-  Printexc.record_backtrace true;
-
   (if Option.is_none (Sys.getenv_opt "XDG_RUNTIME_DIR") then
    let id = Unix.getuid () in
    if id <> 0 then Unix.putenv "XDG_RUNTIME_DIR" (Printf.sprintf "/run/user/%d" id));
@@ -413,8 +411,8 @@ let run_tunnel ~env () : unit =
     |> send
   in
 
-  (* Set up a logging reporter. *)
-  Logs.set_level ~all:true (Some Debug);
+  (* Set up our forwarding log reporter. *)
   Logging.reporter keys (fun msg -> Lwt.async (fun () -> Log msg |> send))
   |> Executor.wrap_logger |> Logs.set_reporter;
+
   run ()
