@@ -103,12 +103,29 @@ module Action : sig
   val ( let+ ) : ('a, 'options) t -> ('a -> 'b) -> ('b, 'options) t
   val ( and+ ) : ('a, 'options) t -> ('b, 'options) t -> ('a * 'b, 'options) t
 
-  (** State that this action (and thus resource) is required for this one to run. This adds an edge
+  (** State that some key (such as a resource) is required for this one to run. This adds an edge
       from one resource to another, with some optional {!Resource.EdgeOptions.t}. *)
   val need : ?options:'options -> ('result, 'kind) key -> ('result, 'options) t
 
   (** Return a value. *)
   val value : 'a -> ('a, 'options) t
+end
+
+(** Extensible variables behave as extension points for a particular module. Modules can add new
+    values to the variable with {!Rules.extend}, while other modules can consume the variable with
+    {!Action.need}.
+
+    This allows you to expose resources or configuration to other modules without introducing cycles
+    between them. For instance, a web server could expose a variable which is then populated by a
+    list of websites, and then used to determine when the httpd service is reloaded. *)
+module Var : sig
+  (** Make a variable which is global across all servers. *)
+  val make_global :
+    ?name:string -> ?__POS__:string * int * int * int -> unit -> ('a list, [ `Var ]) key
+
+  (** Make a variable which is defined for each remote (or local) machine. *)
+  val make_per_machine :
+    ?name:string -> ?__POS__:string * int * int * int -> unit -> ('a list, [ `Var ]) key
 end
 
 (** A monad of rules. This declares a set of resources to create and dependencies between them. *)
@@ -124,6 +141,13 @@ module Rules : sig
     'key ->
     (unit -> ('value Lwt.t, 'options) Action.t) ->
     ('ctx, (unit, [ `Resource ]) key) t
+
+  (* Extend a variable with a new value. *)
+  val extend : ('a list, [ `Var ]) key -> (unit -> ('a Lwt.t, unit) Action.t) -> ('ctx, unit) t
+
+  (** {2 Context modifiers}
+
+      Functions which modify the context under which rules are evaluated. *)
 
   (** Run a set of rules as a particular user. *)
   val with_user : string -> (unit -> ([ `User ], 'a) t) -> ('ctx, 'a) t

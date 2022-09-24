@@ -44,29 +44,28 @@ type t = {
 
     This returns the resulting value, the union of all changed edges, and whether any incoming edge
     changed. *)
-let eval_action (type key value options) ~(resource : (key, value, options) Resource.t) ~(store : t)
-    x =
-  let module R = (val resource) in
+let eval_action (type options) ~options:(module E : Core.EdgeOptions with type t = options)
+    ~(store : t) unpack x =
   let rec go : type ret. (ret, options) action -> (ret * options * bool, unit) result = function
-    | Pure v -> Ok (v, R.EdgeOptions.default, false)
+    | Pure v -> Ok (v, E.default, false)
     | Need (options, key) -> (
         let (State state) = State_map.get_exn store.keys key in
         match state with
         | Pending _ -> failwith "Impossible: Key not ready"
         | Finished (Error ()) -> Error ()
-        | Finished (Ok (changed, ret)) ->
-            Ok (ret, (if changed then options else R.EdgeOptions.default), changed))
+        | Finished (Ok (changed, ret)) -> Ok (ret, (if changed then options else E.default), changed)
+        )
     | Bind (x, f) -> go x |> Result.map (fun (res, options, changed) -> (f res, options, changed))
     | Pair (l, r) -> (
       match (go l, go r) with
       | Ok (l, l_options, l_changed), Ok (r, r_options, r_changed) ->
-          Ok ((l, r), R.EdgeOptions.union l_options r_options, l_changed || r_changed)
+          Ok ((l, r), E.union l_options r_options, l_changed || r_changed)
       | Error (), _ | _, Error () -> Error ())
   in
   match go x with
   | Error () -> Lwt.return_error ()
   | Ok (value, options, changed) ->
-      let%lwt value = value in
+      let%lwt value = unpack value in
       Lwt.return_ok (value, options, changed)
 
 let get_executor ~store:{ executors; switch; local_executor; _ } { Concrete_resource.machine; _ } =
@@ -89,7 +88,7 @@ let eval_resource (type key value options) ~dry_run ~store
   let%lwt result =
     Executor.PartialKey.with_context (PKey (resource, key)) @@ fun () ->
     (* Attempt to evaluate the rule. This is 90% error handling and 10% actual code. Sorry! *)
-    match%lwt eval_action ~resource ~store value with
+    match%lwt eval_action ~options:(module R.EdgeOptions) ~store Fun.id value with
     | Error () -> Lwt.return_error ()
     | exception e ->
         let bt = Printexc.get_raw_backtrace () in
@@ -119,8 +118,18 @@ let eval_resource (type key value options) ~dry_run ~store
   in
   Lwt.return result
 
-let build_rule (type a) ~dry_run ~store (key : a Concrete_key.t) (builder : a Key_builder.t) resolve
-    =
+let eval_var ~store var value =
+  match%lwt eval_action ~options:(module Types.Unit) ~store Lwt.all value.term with
+  | Error () -> Lwt.return_error ()
+  | exception e ->
+      let bt = Printexc.get_raw_backtrace () in
+      Log.err (fun f ->
+          f "Exception getting value for %a: %a" Concrete_var.pp var Fmt.exn_backtrace (e, bt));
+      Lwt.return_error ()
+  | Ok (value, _options, _changed) -> Lwt.return_ok (false, value)
+
+let build_rule (type r opts) ~dry_run ~store (key : (r * opts) Concrete_key.t)
+    (builder : (r * opts) Key_builder.t) resolve =
   let dependencies = Key_builder.dependencies builder in
   let rec eval_deps = function
     | [] -> Lwt.return_ok ()
@@ -136,30 +145,40 @@ let build_rule (type a) ~dry_run ~store (key : a Concrete_key.t) (builder : a Ke
         | Error _ -> Lwt.return_error ())
   in
 
-  let%lwt result =
-    match%lwt eval_deps dependencies with
-    | Ok () -> (
-        store.progress.key_start (BKey key);
-        match (key, builder) with
-        | Resource key, Resource builder -> eval_resource ~dry_run ~store key builder)
-    | Error () -> Lwt.return_error ()
+  (* Written in weird CPS style to work with LWT's desugaring *)
+  let finish (result : (bool * r, unit) result) =
+    State_map.set store.keys key (Packed_state.State (Finished result));
+    Lwt.wakeup_later resolve result;
+    store.progress.key_done (BKey key);
+    Lwt.return_unit
   in
 
-  State_map.set store.keys key (State (Finished result));
-  Lwt.wakeup_later resolve result;
-  store.progress.key_done (BKey key);
-  Lwt.return_unit
+  match%lwt eval_deps dependencies with
+  | Ok () -> (
+      store.progress.key_start (BKey key);
+      match (key, builder) with
+      | Resource key, Resource builder ->
+          let%lwt res = eval_resource ~dry_run ~store key builder in
+          finish res
+      | Var key, Var builder ->
+          let%lwt res = eval_var ~store key builder in
+          finish res)
+  | Error () -> finish (Error ())
 
 let check_graph rules =
   let visited = Key_set.create (Builder_map.length rules) in
   let rec go stack (BKey key as bkey : Concrete_key.boxed) =
-    if Key_set.mem visited key then Ok ()
-    else if not (Builder_map.mem rules key) then Error "Missing node in rule list"
+    if not (Builder_map.mem rules key) then Error "Missing node in rule list"
     else if
       List.exists
         (fun (Concrete_key.BKey other) -> Concrete_key.equal key other |> Het_map.Eq.to_bool)
         stack
-    then Error "Loop in dependency graph"
+    then
+      Format.asprintf "Loop in dependency graph: %a -> %a"
+        Fmt.(list ~sep:(const string " -> ") Concrete_key.Boxed.pp)
+        stack Concrete_key.pp key
+      |> Result.error
+    else if Key_set.mem visited key then Ok ()
     else (
       Key_set.set visited key ();
       Builder_map.get_exn rules key |> Key_builder.dependencies |> go_all (bkey :: stack))
@@ -170,17 +189,17 @@ let check_graph rules =
       | Ok () -> go_all stack xs
       | Error _ as e -> e)
   in
-  let rec go_all_s stack s =
+  let rec go_seq s =
     match s () with
     | Seq.Nil -> Ok ()
     | Cons (x, xs) -> (
-      match go stack x with
-      | Ok () -> go_all_s stack xs
+      match go [] x with
+      | Ok () -> go_seq xs
       | Error _ as e -> e)
   in
   Builder_map.to_seq rules
   |> Seq.map (fun (Builder_map.Packed (k, _)) -> Concrete_key.BKey k)
-  |> go_all_s []
+  |> go_seq
 
 type run_result = {
   total : int;
@@ -195,12 +214,18 @@ let apply ~env ?(progress = default_progress) ?switch ?(dry_run = false) (rules 
     { keys; progress; executors = RemoteTbl.create 2; switch; local_executor = Executor.local ~env }
   in
 
+  (* Nasty indirection to cope with our definition of Concrete_key. *)
+  let add_task key builder =
+    let task, resolve = Lwt.wait () in
+    State_map.set keys key (State (Pending task));
+    fun () -> build_rule ~dry_run ~store key builder resolve
+  in
   let tasks =
     Builder_map.to_seq rules
     |> Seq.map (fun (Builder_map.Packed (key, builder)) ->
-           let task, resolve = Lwt.wait () in
-           State_map.set keys key (State (Pending task));
-           fun () -> build_rule ~dry_run ~store key builder resolve)
+           match key with
+           | Concrete_key.Resource _ -> add_task key builder
+           | Concrete_key.Var _ -> add_task key builder)
     |> CCSeq.to_rev_list
   in
   match check_graph rules with

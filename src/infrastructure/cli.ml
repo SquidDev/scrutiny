@@ -64,6 +64,15 @@ module ProgressHelpers = struct
             | Remote remote -> const ~color:(ansi `yellow) remote.host ++ const " » " ++ task_name
           in
           task_name
+      | Var (CVar { var; _ }) ->
+          let var_name =
+            match var with
+            | { name = Some name; _ } -> const name
+            | { pos = Some (file, line, _, _); _ } -> constf "Var defined at %s:%d" file line
+            | _ -> const "Unknown var"
+          in
+          (* TODO: Pretty-print context. *)
+          var_name
     in
     list [ spinner (); task_name; const "»"; string; elapsed_since counter ]
 end
@@ -157,7 +166,8 @@ let run_with_progress active_keys ~total fn =
   in
   let pkey (Concrete_key.BKey key) =
     match key with
-    | Resource { resource; key; _ } -> Executor.PartialKey.PKey (resource, key)
+    | Resource { resource; key; _ } -> Some (Executor.PartialKey.PKey (resource, key))
+    | Var _ -> None
   in
 
   (* Unconditionally set the line. *)
@@ -177,15 +187,17 @@ let run_with_progress active_keys ~total fn =
   in
 
   let key_start key =
-    PTbl.replace active_keys (pkey key)
+    Fun.flip Option.iter (pkey key) @@ fun pkey ->
+    PTbl.replace active_keys pkey
       { key; clock = Mtime_clock.counter (); line = None; log_dirty = false; log = "" }
   in
   let key_done key =
-    (match PTbl.find_opt active_keys (pkey key) with
+    Fun.flip Option.iter (pkey key) @@ fun pkey ->
+    (match PTbl.find_opt active_keys pkey with
     | Some ({ line = Some line; _ } as status) ->
         update_line status; Progress.Reporter.finalise line
     | _ -> ());
-    PTbl.remove active_keys (pkey key);
+    PTbl.remove active_keys pkey;
 
     let [ reporter ] = Progress.Display.reporters progress_display in
     reporter 1
@@ -258,6 +270,7 @@ let main rules_def =
            match Logs.Src.name src with
            | "piaf.client" | "piaf.http" | "piaf.openssl" ->
                Logs.Src.set_level src (Some extra_level)
+           | "eio_linux" -> Logs.Src.set_level src None
            | _ -> ());
 
     LogsHelpers.(combine_reporters (capturing_reporter active_keys) (logs_reporter (level = Debug)))
@@ -265,7 +278,7 @@ let main rules_def =
 
     (* Evaluate rules. *)
     let rules = Builder_map.create 16 in
-    rules_def { Rules.rules; user = `Current; machine = Local };
+    rules_def { Rules.rules; context = { user = `Current; machine = Local } };
 
     (* And run everything! *)
     let ok =

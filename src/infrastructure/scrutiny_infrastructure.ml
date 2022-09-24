@@ -9,7 +9,7 @@ type run_result = Runner.run_result = {
 
 let apply ~env ?dry_run rule_def =
   let rules = Builder_map.create 16 in
-  rule_def { Rules.rules; user = `Current; machine = Local };
+  rule_def { Rules.rules; context = { user = `Current; machine = Local } };
   Lwt_switch.with_switch @@ fun switch -> Runner.apply ~env ~switch ?dry_run rules
 
 let run_tunnel () =

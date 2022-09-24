@@ -74,9 +74,17 @@ module Resource = struct
     resource
 end
 
-type machine =
-  | Local
-  | Remote of Remote.t
+module Machine = struct
+  type t =
+    | Local
+    | Remote of Remote.t
+
+  let equal x y =
+    match (x, y) with
+    | Local, Local -> true
+    | Remote x, Remote y -> x == y
+    | Local, Remote _ | Remote _, Local -> false
+end
 
 module Concrete_resource = struct
   (** A resource instantiated in a specific context.
@@ -86,7 +94,7 @@ module Concrete_resource = struct
     resource : ('key, 'value, 'options) Resource.t;
     key : 'key;
     user : user;
-    machine : machine;
+    machine : Machine.t;
   }
 
   let hash (type key value options) ({ resource; key; _ } : (key, value, options) t) =
@@ -103,9 +111,62 @@ module Concrete_resource = struct
         if R.Key.equal l.key r.key then Eq else Ineq
 end
 
+type context = {
+  machine : Machine.t;
+  user : user;
+}
+
+type ('var, 'ctx) var = {
+  id : int;
+  name : string option;
+  pos : (string * int * int * int) option;
+  get_context : context -> 'ctx;
+  equal : 'ctx -> 'ctx -> bool;
+}
+
+module Concrete_var = struct
+  type 'a t =
+    | CVar : {
+        var : ('a, 'ctx) var;
+        context : 'ctx;
+      }
+        -> 'a t
+
+  let hash (CVar { var; _ }) = var.id
+
+  let equal (type a b) : a t -> b t -> (a, b) Het_map.Eq.t =
+   fun (CVar v1) (CVar v2) ->
+    match Het_map.Eq.by_ref v1.var v2.var with
+    | Eq -> if v1.var.equal v1.context v2.context then Eq else Ineq
+    | Ineq -> Ineq
+
+  let pp out (CVar { var; _ }) =
+    match var with
+    | { name = Some name; _ } -> Format.fprintf out "Var %s" name
+    | { pos = Some (file, line, _, _); _ } -> Format.fprintf out "Var defined at %s:%d" file line
+    | _ -> Format.fprintf out "Anonymous var"
+
+  let create var context = CVar { var; context = var.get_context context }
+end
+
 (** The user-facing key fed into an action. *)
 type ('result, 'kind) key =
   | Resource : ('key, 'value, 'options) Concrete_resource.t -> (unit, [ `Resource ]) key
+  | Var : ('value, 'ctx) var -> ('value list, [ `Var ]) key
+
+module Var = struct
+  let id = Atomic.make 0
+
+  let make ?name ?__POS__ ~get_context ~equal () =
+    let id = Atomic.fetch_and_add id 1 in
+    Var { id; name; pos = __POS__; get_context; equal }
+
+  let make_global ?name ?__POS__ () =
+    make ?name ?__POS__ ~get_context:(fun _ -> ()) ~equal:Unit.equal ()
+
+  let make_per_machine ?name ?__POS__ () =
+    make ?name ?__POS__ ~get_context:(fun _ -> ()) ~equal:Unit.equal ()
+end
 
 module Concrete_key = struct
   (** An key instantiated for a specific context.
@@ -117,9 +178,11 @@ module Concrete_key = struct
     | Resource :
         ('key, 'value, 'options) Concrete_resource.t
         -> (unit * [ `Resource of 'value * 'options ]) t
+    | Var : 'a Concrete_var.t -> ('a list * [ `Var ]) t
 
   let hash (type a) : a t -> int = function
     | Resource r -> Concrete_resource.hash r
+    | Var v -> Concrete_var.hash v
 
   let equal (type a b) (l : a t) (r : b t) : (a, b) Het_map.Eq.t =
     match (l, r) with
@@ -127,11 +190,32 @@ module Concrete_key = struct
       match Concrete_resource.equal l r with
       | Eq -> Eq
       | Ineq -> Ineq)
+    | Var l, Var r -> (
+      match Concrete_var.equal l r with
+      | Eq -> Eq
+      | Ineq -> Ineq)
+    | Resource _, Var _ | Var _, Resource _ -> Ineq
 
   type boxed = BKey : 'result t -> boxed [@@unboxed]
 
   (** A key which just exposes the result. Convenient for exposing the extra data as an existential. *)
   type 'result with_res = RKey : ('result * 'data) t -> 'result with_res [@@unboxed]
+
+  let create (type result kind) context : (result, kind) key -> result with_res = function
+    | Resource r -> RKey (Resource r)
+    | Var v -> RKey (Var (Concrete_var.create v context))
+
+  let pp (type a) out : a t -> unit = function
+    | Resource { resource = (module R); key; _ } -> R.pp out key
+    | Var v -> Concrete_var.pp out v
+
+  module Boxed = struct
+    type t = boxed
+
+    let hash (BKey b) = hash b
+    let equal (BKey l) (BKey r) = equal l r |> Het_map.Eq.to_bool
+    let pp out (BKey b) = pp out b
+  end
 end
 
 type ('value, 'options) action =
@@ -146,8 +230,12 @@ type ('value, 'options) action_deps = {
 }
 
 module Action = struct
-  type ('value, 'options) t =
-    (module EdgeOptions with type t = 'options) -> ('value, 'options) action_deps
+  type 'options env = {
+    options : (module EdgeOptions with type t = 'options);
+    context : context;
+  }
+
+  type ('value, 'options) t = 'options env -> ('value, 'options) action_deps
 
   let ( let+ ) (x : ('a, 'options) t) (f : 'a -> 'b) options =
     let x = x options in
@@ -157,13 +245,9 @@ module Action = struct
     let x = x m and y = y m in
     { edges = x.edges @ y.edges; term = Pair (x.term, y.term) }
 
-  let instantiate_key (type result kind) : (result, kind) key -> result Concrete_key.with_res =
-    function
-    | Resource r -> RKey (Resource r)
-
-  let need (type options) ?options key (module E : EdgeOptions with type t = options) :
-      ('value, options) action_deps =
-    let (RKey key) = instantiate_key key in
+  let need (type options) ?options key (env : options env) : ('value, options) action_deps =
+    let module E = (val env.options) in
+    let (RKey key) = Concrete_key.create env.context key in
     { edges = [ BKey key ]; term = Need (Option.value ~default:E.default options, key) }
 
   let value x _ = { edges = []; term = Pure x }
@@ -175,9 +259,11 @@ module Key_builder = struct
     | Resource :
         ('value Lwt.t, 'options) action_deps
         -> (unit * [ `Resource of 'value * 'options ]) t
+    | Var : ('value Lwt.t list, unit) action_deps -> ('value list * [ `Var ]) t
 
   let dependencies (type a) : a t -> _ = function
     | Resource r -> r.edges
+    | Var r -> r.edges
 end
 
 module Builder_map = Het_map.Make (Concrete_key) (Key_builder)
@@ -185,34 +271,54 @@ module Builder_map = Het_map.Make (Concrete_key) (Key_builder)
 module Rules = struct
   type rules = Builder_map.t
 
-  type context = {
+  type env = {
+    context : context;
     rules : rules;
-    user : user;
-    machine : machine;
   }
 
-  type ('ctx, 'a) t = context -> 'a
+  type ('ctx, 'a) t = env -> 'a
 
-  let ( let* ) (x : ('ctx, 'a) t) (f : 'a -> ('ctx, 'b) t) context : 'b =
-    let x = x context in
-    f x context
+  let ( let* ) (x : ('ctx, 'a) t) (f : 'a -> ('ctx, 'b) t) env : 'b =
+    let x = x env in
+    f x env
 
   let pure x _ = x
 
   let resource (type key value options) (resource : (key, value, options) Resource.t) key
-      (value : unit -> (value Lwt.t, options) Action.t) (context : context) : _ =
+      (value : unit -> (value Lwt.t, options) Action.t) (env : env) : _ =
     let module R = (val resource) in
-    let value = value () (module R.EdgeOptions) in
-    let key = { Concrete_resource.resource; key; user = context.user; machine = context.machine } in
-    Builder_map.set context.rules (Resource key) (Resource value);
+    let value = value () { options = (module R.EdgeOptions); context = env.context } in
+    let key =
+      { Concrete_resource.resource; key; user = env.context.user; machine = env.context.machine }
+    in
+    Builder_map.set env.rules (Resource key) (Resource value);
     Resource key
 
-  let with_user user (f : unit -> ([ `User ], 'a) t) context : 'a =
-    f () { context with user = `Name user }
+  let extend (type value) (Var key : (value list, [ `Var ]) key)
+      (value : unit -> (value Lwt.t, unit) Action.t) (env : env) : unit =
+    let value = value () { options = (module Types.Unit); context = env.context } in
+    let key = Concrete_key.Var (Concrete_var.create key env.context) in
+    let values =
+      match Builder_map.get env.rules key with
+      | None -> Action.value [] ()
+      | Some (Var v) -> v
+    in
+    let values : _ action_deps =
+      {
+        edges = value.edges @ values.edges;
+        term = Bind (Pair (value.term, values.term), fun (new_def, defs) -> new_def :: defs);
+      }
+    in
+    Builder_map.set env.rules key (Var values)
 
-  let with_user_uid user (f : unit -> ([ `User ], 'a) t) context : 'a =
-    f () { context with user = `Id user }
+  let with_context lift f env = f () { env with context = lift env.context }
 
-  let with_remote remote (f : unit -> ([ `Remote ], 'a) t) context : 'a =
-    f () { context with machine = Remote remote }
+  let with_user user (f : unit -> ([ `User ], 'a) t) env : 'a =
+    with_context (fun c -> { c with user = `Name user }) f env
+
+  let with_user_uid user (f : unit -> ([ `User ], 'a) t) env : 'a =
+    with_context (fun c -> { c with user = `Id user }) f env
+
+  let with_remote remote (f : unit -> ([ `Remote ], 'a) t) env : 'a =
+    with_context (fun c -> { c with machine = Remote remote }) f env
 end

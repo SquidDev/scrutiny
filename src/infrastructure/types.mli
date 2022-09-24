@@ -1,4 +1,19 @@
-open Core
+module type BasicValue = sig
+  type t
+
+  val digest : t -> string
+  val yojson_of_t : t -> Yojson.Safe.t
+  val t_of_yojson : Yojson.Safe.t -> t
+end
+
+module type EdgeOptions = sig
+  type t
+
+  val default : t
+  val union : t -> t -> t
+  val yojson_of_t : t -> Yojson.Safe.t
+  val t_of_yojson : Yojson.Safe.t -> t
+end
 
 module Unit : sig
   include BasicValue with type t = unit
