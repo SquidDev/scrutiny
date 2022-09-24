@@ -126,7 +126,7 @@ let eval_var ~store var value =
       Log.err (fun f ->
           f "Exception getting value for %a: %a" Concrete_var.pp var Fmt.exn_backtrace (e, bt));
       Lwt.return_error ()
-  | Ok (value, _options, _changed) -> Lwt.return_ok (false, value)
+  | Ok (value, _options, changed) -> Lwt.return_ok (changed, value)
 
 let build_rule (type r opts) ~dry_run ~store (key : (r * opts) Concrete_key.t)
     (builder : (r * opts) Key_builder.t) resolve =

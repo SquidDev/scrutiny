@@ -116,8 +116,13 @@ end
     {!Action.need}.
 
     This allows you to expose resources or configuration to other modules without introducing cycles
-    between them. For instance, a web server could expose a variable which is then populated by a
-    list of websites, and then used to determine when the httpd service is reloaded. *)
+    between them. For instance, a monitoring service could expose a variable containing services to
+    monitor. Other modules can then register their services with this variable, ensuring scraping,
+    alerts, etc... are correctly set up.
+
+    When a variable is extended, it accepts an {!Action.t} rather than a single value, meaning a
+    variable can depend on resources or other variables. If a depended resource changes, this
+    variable is also considered as having changed. *)
 module Var : sig
   (** Make a variable which is global across all servers. *)
   val make_global :

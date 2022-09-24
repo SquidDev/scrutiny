@@ -165,7 +165,7 @@ module Var = struct
     make ?name ?__POS__ ~get_context:(fun _ -> ()) ~equal:Unit.equal ()
 
   let make_per_machine ?name ?__POS__ () =
-    make ?name ?__POS__ ~get_context:(fun _ -> ()) ~equal:Unit.equal ()
+    make ?name ?__POS__ ~get_context:(fun c -> c.machine) ~equal:Machine.equal ()
 end
 
 module Concrete_key = struct
