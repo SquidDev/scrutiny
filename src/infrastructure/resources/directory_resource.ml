@@ -36,8 +36,7 @@ module Dir = struct
     | Error e, _ | _, Error e -> Error e
     | Ok user, Ok group -> Ok { File_mod.user; group; perms }
 
-  let apply ~env path (target : DirState.t) () : (Infra.change, string) result Lwt.t =
-    Lwt_eio.run_eio @@ fun () ->
+  let apply ~env path (target : DirState.t) () : (Infra.change, string) result =
     let path' = Path_support.of_fpath ~env path in
 
     let current = get_state path and target = state_to_partial target in
@@ -49,7 +48,6 @@ module Dir = struct
     | Ok _, Ok target ->
         let diff = Scrutiny_diff.Structure.diff File_mod.fields None (Some target) in
         let apply () =
-          Lwt_eio.run_eio @@ fun () ->
           match Eio.Path.mkdir ~perm:target.perms path' with
           (* TODO: mkdirs instead? What's the correct behaviour with perms? *)
           | () -> File_mod.apply ~current:None ~target path

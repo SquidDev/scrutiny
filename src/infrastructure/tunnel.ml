@@ -233,6 +233,7 @@ let executor ?switch ~input ~output () : Executor.t =
   in
 
   let check ~user resource key value options =
+    Lwt_eio.run_lwt @@ fun () ->
     Lwt_switch.check switch;
 
     let resource_box = AppliedResource.Boxed { resource; key; value; options; user } in
@@ -252,7 +253,9 @@ let executor ?switch ~input ~output () : Executor.t =
       result
       |> Or_exn.map @@ function
          | `Correct -> Executor.ECorrect
-         | `NeedsChange diff -> Executor.ENeedsChange { diff; apply = (fun () -> apply id) }
+         | `NeedsChange diff ->
+             Executor.ENeedsChange
+               { diff; apply = (fun () -> Lwt_eio.run_lwt @@ fun () -> apply id) }
     in
     Lwt.return result
   in
@@ -325,8 +328,11 @@ let make_executor_factory ~env ?switch () : Core.user -> Executor.t Or_exn.t Lwt
   in
   find
 
-let ssh ?switch ({ sudo_pw; host; tunnel_path } : Remote.t) =
-  Lwt_switch.check switch;
+let ssh ~sw ({ sudo_pw; host; tunnel_path } : Remote.t) =
+  Lwt_eio.run_lwt @@ fun () ->
+  let switch = Lwt_switch.create () in
+  Eio.Switch.on_release sw (fun () -> Lwt_switch.turn_off switch |> Lwt_eio.Promise.await_lwt);
+
   let setup, cmd =
     let ssh = Sys.getenv_opt "SCRUTINY_SSH" |> Option.value ~default:"ssh" in
     match sudo_pw with
@@ -339,13 +345,15 @@ let ssh ?switch ({ sudo_pw; host; tunnel_path } : Remote.t) =
         in
         (prompt, [| ssh; host; "sudo"; "-S"; "-p"; "sudo[scrutiny-infra-tunnel]: "; tunnel_path |])
   in
-  executor_of_cmd ?switch setup cmd
+  executor_of_cmd ~switch setup cmd
 
-let run_tunnel ~env ?switch () : unit Lwt.t =
+let run_tunnel ~env () : unit =
+  Lwt_eio.run_lwt @@ fun () ->
+  Lwt_switch.with_switch @@ fun switch ->
   let pending_actions = ITbl.create 32 in
   let keys = PTbl.create 32 in
 
-  let run_as_user = make_executor_factory ?switch () in
+  let run_as_user = make_executor_factory ~switch () in
 
   let send msg =
     let result = yojson_of_to_client msg |> Yojson.Safe.to_string in
@@ -356,7 +364,8 @@ let run_tunnel ~env ?switch () : unit Lwt.t =
       match%lwt run_as_user ~env user with
       | Error msg -> Lwt.return (Or_exn.Error msg)
       | Exception msg -> Lwt.return (Or_exn.Exception msg)
-      | Ok executor -> executor.apply ~user:`Current resource key value options
+      | Ok executor ->
+          Lwt_eio.run_eio @@ fun () -> executor.apply ~user:`Current resource key value options
     in
     let result =
       result
@@ -370,7 +379,7 @@ let run_tunnel ~env ?switch () : unit Lwt.t =
   in
 
   let apply_resource id apply =
-    let%lwt result = apply () in
+    let%lwt result = Lwt_eio.run_eio @@ fun () -> apply () in
     ApplyResult { id; result } |> send
   in
 

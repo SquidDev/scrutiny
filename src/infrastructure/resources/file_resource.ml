@@ -87,8 +87,7 @@ module File = struct
 
     File_mod.apply ~current:(Option.map (fun x -> x.file_mod) current) ~target:target.file_mod path
 
-  let apply ~env path (target : FileState.t) () : (Infra.change, string) result Lwt.t =
-    Lwt_eio.run_eio @@ fun () ->
+  let apply ~env path (target : FileState.t) () : (Infra.change, string) result =
     let current = get_current_state ~env path and target' = state_to_partial target in
     match (current, target') with
     | Error e, _ | _, Error e -> Error e
@@ -100,7 +99,7 @@ module File = struct
           Infra.NeedsChange
             {
               diff = Scrutiny_diff.Structure.diff fields current (Some target);
-              apply = (fun () -> Lwt_eio.run_eio @@ fun () -> do_apply ~env ~path current target);
+              apply = (fun () -> do_apply ~env ~path current target);
             }
         in
         Ok change

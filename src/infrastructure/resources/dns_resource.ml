@@ -26,15 +26,13 @@ module DnsResource = struct
   let pp out x = Fmt.fmt "Zone %s" out x
 
   let apply ~env ~zone ~source ~spec () =
-    Lwt_eio.run_eio @@ fun () ->
     Eio.Switch.run @@ fun sw ->
     let client = Dns.Client.create ~sw ~clock:env#clock ~net:env#net source in
 
     let res, _diff = Dns.DnsRecord.Spec.sync ~dryrun:false ~client ~zone spec in
     res
 
-  let apply ~env zone ({ source; spec } : State.t) () : (Infra.change, string) result Lwt.t =
-    Lwt_eio.run_eio @@ fun () ->
+  let apply ~env zone ({ source; spec } : State.t) () : (Infra.change, string) result =
     Eio.Switch.run @@ fun sw ->
     let client = Dns.Client.create ~sw ~clock:env#clock ~net:env#net source in
 
@@ -62,4 +60,4 @@ let zone id ~source spec =
   Infra.Rules.resource cf_module id @@ fun () ->
   let open Infra.Action in
   let+ spec = spec () in
-  Lwt.return { State.source; spec }
+  { State.source; spec }

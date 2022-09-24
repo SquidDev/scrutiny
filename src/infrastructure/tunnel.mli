@@ -1,6 +1,6 @@
 (** Runs commands over stdin/stdout. This allows us to run states on remote servers, etc... *)
 
 (** Start a new process which runs a tunnel. *)
-val run_tunnel : env:Eio.Stdenv.t -> ?switch:Lwt_switch.t -> unit -> unit Lwt.t
+val run_tunnel : env:Eio.Stdenv.t -> unit -> unit
 
-val ssh : ?switch:Lwt_switch.t -> Core.Remote.t -> (Executor.t, string) result Lwt.t
+val ssh : sw:Eio.Switch.t -> Core.Remote.t -> (Executor.t, string) result

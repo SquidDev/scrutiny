@@ -29,7 +29,7 @@ type change =
   | Correct  (** This resource is in the correct state and no changes need be made.*)
   | NeedsChange of {
       diff : Scrutiny_diff.t;
-      apply : unit -> (unit, string) result Lwt.t;
+      apply : unit -> (unit, string) result;
     }
       (** This resource is not in the correct state. Contains a diff from the current to target
           state, and a function which will apply those changes. *)
@@ -79,7 +79,7 @@ module type Resource = sig
 
       The [apply] function itself should have no side effects, as this is used when performing
       dry-runs and other sanity checks. *)
-  val apply : env:Eio.Stdenv.t -> Key.t -> Value.t -> EdgeOptions.t -> (change, string) result Lwt.t
+  val apply : env:Eio.Stdenv.t -> Key.t -> Value.t -> EdgeOptions.t -> (change, string) result
 end
 
 module Resource : sig
@@ -144,11 +144,11 @@ module Rules : sig
   val resource :
     ('key, 'value, 'options) Resource.t ->
     'key ->
-    (unit -> ('value Lwt.t, 'options) Action.t) ->
+    (unit -> ('value, 'options) Action.t) ->
     ('ctx, (unit, [ `Resource ]) key) t
 
   (* Extend a variable with a new value. *)
-  val extend : ('a list, [ `Var ]) key -> (unit -> ('a Lwt.t, unit) Action.t) -> ('ctx, unit) t
+  val extend : ('a list, [ `Var ]) key -> (unit -> ('a, unit) Action.t) -> ('ctx, unit) t
 
   (** {2 Context modifiers}
 
@@ -192,10 +192,7 @@ type run_result = {
 
 (** Apply a collection of rules. *)
 val apply :
-  env:Eio.Stdenv.t ->
-  ?dry_run:bool ->
-  ([ `Local ], unit) Rules.t ->
-  (run_result, string) result Lwt.t
+  env:Eio.Stdenv.t -> ?dry_run:bool -> ([ `Local ], unit) Rules.t -> (run_result, string) result
 
 (** Parse command line arguments and apply a set of rules. *)
 val main : ([ `Local ], unit) Rules.t -> unit

@@ -1,4 +1,5 @@
 open Core
+open Eio.Std
 module Log = (val Logs.src_log (Logs.Src.create __MODULE__))
 
 module Key_set =
@@ -16,7 +17,7 @@ module RemoteTbl = Hashtbl.Make (struct
 end)
 
 type 'a state =
-  | Pending of (bool * 'a, unit) result Lwt.t
+  | Pending of (bool * 'a, unit) result Promise.t
   | Finished of (bool * 'a, unit) result
 
 module Packed_state = struct
@@ -35,8 +36,8 @@ let default_progress = { key_start = (fun _ -> ()); key_done = (fun _ -> ()) }
 type t = {
   keys : State_map.t;
   progress : progress;
-  executors : Executor.t Or_exn.t Lwt.t RemoteTbl.t;
-  switch : Lwt_switch.t option;
+  executors : Executor.t Or_exn.t Promise.t RemoteTbl.t;
+  sw : Switch.t;
   local_executor : Executor.t;
 }
 
@@ -45,7 +46,7 @@ type t = {
     This returns the resulting value, the union of all changed edges, and whether any incoming edge
     changed. *)
 let eval_action (type options) ~options:(module E : Core.EdgeOptions with type t = options)
-    ~(store : t) unpack x =
+    ~(store : t) x =
   let rec go : type ret. (ret, options) action -> (ret * options * bool, unit) result = function
     | Pure v -> Ok (v, E.default, false)
     | Need (options, key) -> (
@@ -63,21 +64,19 @@ let eval_action (type options) ~options:(module E : Core.EdgeOptions with type t
       | Error (), _ | _, Error () -> Error ())
   in
   match go x with
-  | Error () -> Lwt.return_error ()
-  | Ok (value, options, changed) ->
-      let%lwt value = unpack value in
-      Lwt.return_ok (value, options, changed)
+  | Error () -> Error ()
+  | Ok (value, options, changed) -> Ok (value, options, changed)
 
-let get_executor ~store:{ executors; switch; local_executor; _ } { Concrete_resource.machine; _ } =
+let get_executor ~store:{ executors; sw; local_executor; _ } { Concrete_resource.machine; _ } =
   match machine with
-  | Local -> Lwt.return (Or_exn.Ok local_executor)
+  | Local -> Or_exn.Ok local_executor
   | Remote remote -> (
     match RemoteTbl.find_opt executors remote with
-    | Some x -> x
+    | Some x -> Promise.await x
     | None ->
-        let tunnel = Or_exn.run_lwt (fun () -> Tunnel.ssh ?switch remote) in
-        RemoteTbl.replace executors remote tunnel;
-        tunnel)
+        let await = Or_exn.fork ~sw (fun () -> Tunnel.ssh ~sw remote) in
+        RemoteTbl.replace executors remote await;
+        Promise.await await)
 
 (** Evaluate a rule, assuming all dependencies have been built. *)
 let eval_resource (type key value options) ~dry_run ~store
@@ -85,85 +84,76 @@ let eval_resource (type key value options) ~dry_run ~store
   let { Concrete_resource.resource; key; user; _ } = cresource in
   let value = builder.term in
   let module R = (val resource) in
-  let%lwt result =
-    Executor.PartialKey.with_context (PKey (resource, key)) @@ fun () ->
-    (* Attempt to evaluate the rule. This is 90% error handling and 10% actual code. Sorry! *)
-    match%lwt eval_action ~options:(module R.EdgeOptions) ~store Fun.id value with
-    | Error () -> Lwt.return_error ()
-    | exception e ->
-        let bt = Printexc.get_raw_backtrace () in
-        Log.err (fun f -> f "Exception getting value for %a: %a" R.pp key Fmt.exn_backtrace (e, bt));
-        Lwt.return_error ()
-    | Ok (value, options, _changed) -> (
-        Log.debug (fun f -> f "Applying: %a" R.pp key);
-        let ( let>> ) = Lwt_result.bind in
-        let ( <?> ) action (err, exn) = Or_exn.log (module Log) action (err, exn) in
-        let>> executor =
-          get_executor ~store cresource <?> ("Failed to get executor", "Exception getting executor")
-        in
-        let>> result =
-          executor.apply ~user resource key value options
-          <?> ("Failed to compute changes", "Exception computing changes")
-        in
-        match result with
-        | ECorrect ->
-            Log.debug (fun f -> f "No changes needed");
-            Lwt.return_ok (false, ())
-        | ENeedsChange { diff; apply } ->
-            Log.info (fun f -> f "Applying %a:@\n%a" R.pp key (Scrutiny_diff.pp ~full:false) diff);
-            if dry_run then Lwt.return_ok (true, ())
-            else
-              let>> () = apply () <?> ("Failed to apply changes", "Exception applying changes") in
-              Lwt.return_ok (true, ()))
-  in
-  Lwt.return result
+  Executor.PartialKey.with_context (PKey (resource, key)) @@ fun () ->
+  (* Attempt to evaluate the rule. This is 90% error handling and 10% actual code. Sorry! *)
+  match eval_action ~options:(module R.EdgeOptions) ~store value with
+  | Error () -> Error ()
+  | exception e ->
+      let bt = Printexc.get_raw_backtrace () in
+      Log.err (fun f -> f "Exception getting value for %a: %a" R.pp key Fmt.exn_backtrace (e, bt));
+      Error ()
+  | Ok (value, options, _changed) -> (
+      Log.debug (fun f -> f "Applying: %a" R.pp key);
+      let ( let>> ) = Result.bind in
+      let ( <?> ) action (err, exn) = Or_exn.log (module Log) action (err, exn) in
+      let>> executor =
+        get_executor ~store cresource <?> ("Failed to get executor", "Exception getting executor")
+      in
+      let>> result =
+        executor.apply ~user resource key value options
+        <?> ("Failed to compute changes", "Exception computing changes")
+      in
+      match result with
+      | ECorrect ->
+          Log.debug (fun f -> f "No changes needed");
+          Ok (false, ())
+      | ENeedsChange { diff; apply } ->
+          Log.info (fun f -> f "Applying %a:@\n%a" R.pp key (Scrutiny_diff.pp ~full:false) diff);
+          if dry_run then Ok (true, ())
+          else
+            let>> () = apply () <?> ("Failed to apply changes", "Exception applying changes") in
+            Ok (true, ()))
 
 let eval_var ~store var value =
-  match%lwt eval_action ~options:(module Types.Unit) ~store Lwt.all value.term with
-  | Error () -> Lwt.return_error ()
+  match eval_action ~options:(module Types.Unit) ~store value.term with
+  | Error () -> Error ()
   | exception e ->
       let bt = Printexc.get_raw_backtrace () in
       Log.err (fun f ->
           f "Exception getting value for %a: %a" Concrete_var.pp var Fmt.exn_backtrace (e, bt));
-      Lwt.return_error ()
-  | Ok (value, _options, changed) -> Lwt.return_ok (changed, value)
+      Error ()
+  | Ok (value, _options, changed) -> Ok (changed, value)
 
 let build_rule (type r opts) ~dry_run ~store (key : (r * opts) Concrete_key.t)
     (builder : (r * opts) Key_builder.t) resolve =
   let dependencies = Key_builder.dependencies builder in
   let rec eval_deps = function
-    | [] -> Lwt.return_ok ()
+    | [] -> Ok ()
     | Concrete_key.BKey dep :: deps -> (
         let (State state) = State_map.get_exn store.keys dep in
-        let%lwt result =
+        let result =
           match state with
-          | Finished f -> Lwt.return f
-          | Pending x -> x
+          | Finished f -> f
+          | Pending x -> Promise.await x
         in
         match result with
         | Ok _ -> eval_deps deps
-        | Error _ -> Lwt.return_error ())
+        | Error _ -> Error ())
   in
 
-  (* Written in weird CPS style to work with LWT's desugaring *)
-  let finish (result : (bool * r, unit) result) =
-    State_map.set store.keys key (Packed_state.State (Finished result));
-    Lwt.wakeup_later resolve result;
-    store.progress.key_done (BKey key);
-    Lwt.return_unit
+  let result : (bool * r, unit) result =
+    match eval_deps dependencies with
+    | Ok () -> (
+        store.progress.key_start (BKey key);
+        match (key, builder) with
+        | Resource key, Resource builder -> eval_resource ~dry_run ~store key builder
+        | Var key, Var builder -> eval_var ~store key builder)
+    | Error () -> Error ()
   in
 
-  match%lwt eval_deps dependencies with
-  | Ok () -> (
-      store.progress.key_start (BKey key);
-      match (key, builder) with
-      | Resource key, Resource builder ->
-          let%lwt res = eval_resource ~dry_run ~store key builder in
-          finish res
-      | Var key, Var builder ->
-          let%lwt res = eval_var ~store key builder in
-          finish res)
-  | Error () -> finish (Error ())
+  State_map.set store.keys key (Packed_state.State (Finished result));
+  Promise.resolve resolve result;
+  store.progress.key_done (BKey key)
 
 let check_graph rules =
   let visited = Key_set.create (Builder_map.length rules) in
@@ -207,16 +197,17 @@ type run_result = {
   failed : int;
 }
 
-let apply ~env ?(progress = default_progress) ?switch ?(dry_run = false) (rules : Rules.rules) =
+let apply ~env ?(progress = default_progress) ?(dry_run = false) (rules : Rules.rules) =
+  Switch.run @@ fun sw ->
   let total = Builder_map.length rules in
   let keys = State_map.create total in
   let store =
-    { keys; progress; executors = RemoteTbl.create 2; switch; local_executor = Executor.local ~env }
+    { keys; progress; executors = RemoteTbl.create 2; sw; local_executor = Executor.local ~env }
   in
 
   (* Nasty indirection to cope with our definition of Concrete_key. *)
   let add_task key builder =
-    let task, resolve = Lwt.wait () in
+    let task, resolve = Promise.create () in
     State_map.set keys key (State (Pending task));
     fun () -> build_rule ~dry_run ~store key builder resolve
   in
@@ -229,9 +220,9 @@ let apply ~env ?(progress = default_progress) ?switch ?(dry_run = false) (rules 
     |> CCSeq.to_rev_list
   in
   match check_graph rules with
-  | Error e -> Lwt.return_error e
+  | Error e -> Error e
   | Ok () ->
-      let%lwt () = Lwt_list.iter_p (fun f -> f ()) tasks in
+      Fiber.all tasks;
       let changed, failed =
         State_map.to_seq keys
         |> Seq.fold_left
@@ -242,4 +233,4 @@ let apply ~env ?(progress = default_progress) ?switch ?(dry_run = false) (rules 
                | Finished (Error _) | Pending _ -> (changed, failed + 1))
              (0, 0)
       in
-      Lwt.return_ok { changed; failed; total = Builder_map.length rules }
+      Ok { changed; failed; total = Builder_map.length rules }

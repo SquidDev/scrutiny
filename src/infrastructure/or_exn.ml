@@ -27,12 +27,17 @@ let map f : 'a t -> 'b t = function
   | Error e -> Error e
   | Exception e -> Exception e
 
-let log (module Log : Logs.LOG) (l : _ t Lwt.t) (err, exn) =
-  match%lwt l with
+let log (module Log : Logs.LOG) (l : _ t) (err, exn) : _ result =
+  match l with
   | Error e ->
       Log.err (fun f -> f "%s: %s" err e);
-      Lwt.return_error ()
+      Error ()
   | Exception e ->
       Log.err (fun f -> f "%s: %s" exn e);
-      Lwt.return_error ()
-  | Ok x -> Lwt.return_ok x
+      Error ()
+  | Ok x -> Ok x
+
+let fork ~sw fn =
+  let await, resolve = Eio.Promise.create () in
+  Eio.Fiber.fork ~sw (fun () -> run fn |> Eio.Promise.resolve resolve);
+  await

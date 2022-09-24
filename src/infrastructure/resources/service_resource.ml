@@ -155,7 +155,8 @@ module Service = struct
         Printf.sprintf "Expecting service to be %s but is %s" target_state current_state
         |> Lwt.return_error)
 
-  let apply ~env:_ { ServiceName.name; scope } target change : (Infra.change, string) result Lwt.t =
+  let apply ~env:_ { ServiceName.name; scope } target change : (Infra.change, string) result =
+    Lwt_eio.run_lwt @@ fun () ->
     match get_desired_state change target with
     | Error e -> Lwt.return_error e
     | Ok (target_state, target_state_apply) ->
@@ -181,6 +182,7 @@ module Service = struct
           (* TODO: Refactor this somewhere which isn't /quite/ so ugly? There's a lot of captured
              state though, which makes this a little more awkward. *)
           let apply () =
+            Lwt_eio.run_lwt @@ fun () ->
             Lwt_switch.with_switch @@ fun sw ->
             watch_journal ~switch:(Some sw) ~unit_name:name;
 
@@ -213,7 +215,4 @@ let service_resource =
 
 let service ~name ~scope action =
   let name = if String.contains name '.' then name else name ^ ".service" in
-  Infra.Rules.resource service_resource { name; scope } @@ fun () ->
-  let open Infra.Action in
-  let+ result = action () in
-  Lwt.return result
+  Infra.Rules.resource service_resource { name; scope } action

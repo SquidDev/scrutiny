@@ -9,7 +9,7 @@ module PartialKey : sig
   val tag : t Logs.Tag.def
 
   (** Run a continuation with the given context in scope. *)
-  val with_context : t -> (unit -> 'a Lwt.t) -> 'a Lwt.t
+  val with_context : t -> (unit -> 'a) -> 'a
 end
 
 (** Wrap a log reporter, adding additional tags before dispatching to the original one. *)
@@ -19,7 +19,7 @@ type change =
   | ECorrect
   | ENeedsChange of {
       diff : Scrutiny_diff.t;
-      apply : unit -> unit Or_exn.t Lwt.t;
+      apply : unit -> unit Or_exn.t;
     }
 
 type t = {
@@ -30,7 +30,7 @@ type t = {
     'key ->
     'value ->
     'options ->
-    change Or_exn.t Lwt.t;
+    change Or_exn.t;
 }
 
 (** An executor which applies actions to the local machine. *)

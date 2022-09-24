@@ -13,7 +13,6 @@ type progress = {
 val apply :
   env:Eio.Stdenv.t ->
   ?progress:progress ->
-  ?switch:Lwt_switch.t ->
   ?dry_run:bool ->
   Core.Rules.rules ->
-  (run_result, string) result Lwt.t
+  (run_result, string) result

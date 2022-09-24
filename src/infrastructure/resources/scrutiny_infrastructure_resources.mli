@@ -19,9 +19,7 @@ module File : sig
 
   (** Ensure a file exists with specific content. *)
   val file :
-    Fpath.t ->
-    (unit -> (file_state Lwt.t, unit) Action.t) ->
-    ('ctx, (unit, [ `Resource ]) key) Rules.t
+    Fpath.t -> (unit -> (file_state, unit) Action.t) -> ('ctx, (unit, [ `Resource ]) key) Rules.t
 
   (** A simpler version of {!file}, where only the contents varies. *)
   val file' :
@@ -54,9 +52,7 @@ module Directory : sig
 
   (** Ensure a directory exists. *)
   val directory :
-    Fpath.t ->
-    (unit -> (dir_state Lwt.t, unit) Action.t) ->
-    ('ctx, (unit, [ `Resource ]) key) Rules.t
+    Fpath.t -> (unit -> (dir_state, unit) Action.t) -> ('ctx, (unit, [ `Resource ]) key) Rules.t
 
   (** A simpler version of {!directory}, where nothing varies. *)
   val directory' :

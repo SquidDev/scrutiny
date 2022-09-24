@@ -16,16 +16,15 @@ module PartialKey = struct
     in
     Logs.Tag.def "BoxedKey" pp_key
 
-  (** An {!Lwt.key} marking which key we're currently running. While this API is deprecated, it's
-      the only way to do this :(. *)
-  let context : t Lwt.key = Lwt.new_key ()
+  (** An {!Eio.Fiber.key} marking which key we're currently running. *)
+  let context : t Eio.Fiber.key = Eio.Fiber.create_key ()
 
-  let with_context key fn = Lwt.with_value context (Some key) fn
+  let with_context key fn = Eio.Fiber.with_binding context key fn
 end
 
 let wrap_logger { Logs.report } =
   let report src level ~over k msgf =
-    let key = Lwt.get PartialKey.context in
+    let key = Eio.Fiber.get PartialKey.context in
     report src level ~over k @@ fun f ->
     msgf @@ fun ?header ?(tags = Logs.Tag.empty) fmt ->
     let tags =
@@ -43,7 +42,7 @@ type change =
   | ECorrect
   | ENeedsChange of {
       diff : Scrutiny_diff.t;
-      apply : unit -> unit Or_exn.t Lwt.t;
+      apply : unit -> unit Or_exn.t;
     }
 
 type t = {
@@ -54,28 +53,28 @@ type t = {
     'key ->
     'value ->
     'options ->
-    change Or_exn.t Lwt.t;
+    change Or_exn.t;
 }
 
 module LocalExecutor = struct
   let apply_basic (type key value option) ~env (resource : (key, value, option) Resource.t) key
-      value option : change Or_exn.t Lwt.t =
+      value option : change Or_exn.t =
     let module R = (val resource) in
-    let wrap fn = PartialKey.with_context (PKey (resource, key)) @@ fun () -> Or_exn.run_lwt fn in
-    let%lwt result = wrap (fun () -> R.apply ~env key value option) in
+    let wrap fn = PartialKey.with_context (PKey (resource, key)) @@ fun () -> Or_exn.run fn in
+    let result = wrap (fun () -> R.apply ~env key value option) in
     let result =
       result
       |> Or_exn.map @@ function
          | Correct -> ECorrect
          | NeedsChange { diff; apply } -> ENeedsChange { diff; apply = (fun () -> wrap apply) }
     in
-    Lwt.return result
+    result
 
   let mk ~env : t =
     let apply ~(user : user) resource key value option =
       match user with
       | `Current -> apply_basic ~env resource key value option
-      | `Name _ | `Id _ -> Lwt.return (Or_exn.Error "Cannot use different users on local executor.")
+      | `Name _ | `Id _ -> Or_exn.Error "Cannot use different users on local executor."
     in
     { apply }
 end

@@ -28,7 +28,7 @@ type change =
   | Correct
   | NeedsChange of {
       diff : Scrutiny_diff.t;
-      apply : unit -> (unit, string) result Lwt.t;
+      apply : unit -> (unit, string) result;
     }
 
 module type EdgeOptions = sig
@@ -52,7 +52,7 @@ module type Resource = sig
   module Value : BasicValue
 
   val pp : Key.t Fmt.t
-  val apply : env:Eio.Stdenv.t -> Key.t -> Value.t -> EdgeOptions.t -> (change, string) result Lwt.t
+  val apply : env:Eio.Stdenv.t -> Key.t -> Value.t -> EdgeOptions.t -> (change, string) result
 end
 
 module Resource = struct
@@ -256,10 +256,8 @@ end
 (** Information needed to build a key. This has an identical structure to {!Concrete_key}. *)
 module Key_builder = struct
   type 'a t =
-    | Resource :
-        ('value Lwt.t, 'options) action_deps
-        -> (unit * [ `Resource of 'value * 'options ]) t
-    | Var : ('value Lwt.t list, unit) action_deps -> ('value list * [ `Var ]) t
+    | Resource : ('value, 'options) action_deps -> (unit * [ `Resource of 'value * 'options ]) t
+    | Var : ('value list, unit) action_deps -> ('value list * [ `Var ]) t
 
   let dependencies (type a) : a t -> _ = function
     | Resource r -> r.edges
@@ -285,7 +283,7 @@ module Rules = struct
   let pure x _ = x
 
   let resource (type key value options) (resource : (key, value, options) Resource.t) key
-      (value : unit -> (value Lwt.t, options) Action.t) (env : env) : _ =
+      (value : unit -> (value, options) Action.t) (env : env) : _ =
     let module R = (val resource) in
     let value = value () { options = (module R.EdgeOptions); context = env.context } in
     let key =
@@ -295,7 +293,7 @@ module Rules = struct
     Resource key
 
   let extend (type value) (Var key : (value list, [ `Var ]) key)
-      (value : unit -> (value Lwt.t, unit) Action.t) (env : env) : unit =
+      (value : unit -> (value, unit) Action.t) (env : env) : unit =
     let value = value () { options = (module Types.Unit); context = env.context } in
     let key = Concrete_key.Var (Concrete_var.create key env.context) in
     let values =

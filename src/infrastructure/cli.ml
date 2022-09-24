@@ -1,3 +1,4 @@
+open Eio.Std
 include Core
 include Types
 module PTbl = Hashtbl.Make (Executor.PartialKey)
@@ -160,7 +161,7 @@ module LogsHelpers = struct
 end
 
 (** Create a progress display, which tracks total progress and displays long-running tasks. *)
-let run_with_progress active_keys ~total fn =
+let progress_tracker ~sw ~clock ~active_keys ~total =
   let progress_display =
     ProgressHelpers.progress_line ~total |> Progress.Multi.line |> Progress.Display.start
   in
@@ -224,14 +225,13 @@ let run_with_progress active_keys ~total fn =
       active_keys;
 
     Progress.Display.tick progress_display;
-    Lwt.bind (Lwt_unix.sleep 0.2) tick_progress
+    Eio.Time.sleep clock 0.2;
+    tick_progress ()
   in
 
-  Lwt.finalize
-    (fun () -> Lwt.async tick_progress; fn progress)
-    (fun () ->
-      Progress.Display.finalise progress_display;
-      Lwt.return_unit)
+  Fiber.fork_daemon ~sw tick_progress;
+  Switch.on_release sw (fun () -> Progress.Display.finalise progress_display);
+  progress
 
 let main rules_def =
   Printexc.record_backtrace true;
@@ -284,9 +284,11 @@ let main rules_def =
     let ok =
       Eio_main.run @@ fun env ->
       Lwt_eio.with_event_loop ~clock:env#clock @@ fun _token ->
-      Lwt_eio.run_lwt @@ fun () ->
-      run_with_progress active_keys ~total:(Builder_map.length rules) @@ fun progress ->
-      Lwt_switch.with_switch @@ fun switch -> Runner.apply ~env ~switch ~dry_run ~progress rules
+      Switch.run @@ fun sw ->
+      let progress =
+        progress_tracker ~sw ~clock:env#clock ~active_keys ~total:(Builder_map.length rules)
+      in
+      Runner.apply ~env ~dry_run ~progress rules
     in
     match ok with
     | Error err ->
