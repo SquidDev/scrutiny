@@ -17,7 +17,7 @@
   result
   scrutiny.diff
   scrutiny.rpc
-  threads
+  threads.posix
   unix
   yojson
   ; Command line

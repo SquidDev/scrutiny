@@ -10,7 +10,7 @@
   fmt
   logs
   ppx_yojson_conv_lib
-  threads
+  threads.posix
   yojson)
  (preprocess
   (pps ppx_yojson_conv)))
