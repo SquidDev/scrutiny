@@ -74,6 +74,7 @@ module Resource = struct
     resource
 end
 
+(** A machine where a rule can be applied. *)
 module Machine = struct
   type t =
     | Local
@@ -84,6 +85,35 @@ module Machine = struct
     | Local, Local -> true
     | Remote x, Remote y -> x == y
     | Local, Remote _ | Remote _, Local -> false
+
+  let hash = function
+    | Local -> 1
+    | Remote r -> String.hash r.host
+
+  let pp out = function
+    | Local -> Format.pp_print_string out "Local"
+    | Remote r -> Format.pp_print_string out r.host
+end
+
+(** An executor responsible for running a rule on a {!Machine}. *)
+module Executor = struct
+  type change =
+    | ECorrect
+    | ENeedsChange of {
+        diff : Scrutiny_diff.t;
+        apply : unit -> unit Or_exn.t;
+      }
+
+  type t = {
+    apply :
+      'key 'value 'options.
+      user:user ->
+      ('key, 'value, 'options) Resource.t ->
+      'key ->
+      'value ->
+      'options ->
+      change Or_exn.t;
+  }
 end
 
 module Concrete_resource = struct
@@ -153,6 +183,7 @@ end
 type ('result, 'kind) key =
   | Resource : ('key, 'value, 'options) Concrete_resource.t -> (unit, [ `Resource ]) key
   | Var : ('value, 'ctx) var -> ('value list, [ `Var ]) key
+  | Machine : Machine.t -> (Executor.t, [ `Machine ]) key
 
 module Var = struct
   let id = Atomic.make 0
@@ -179,10 +210,12 @@ module Concrete_key = struct
         ('key, 'value, 'options) Concrete_resource.t
         -> (unit * [ `Resource of 'value * 'options ]) t
     | Var : 'a Concrete_var.t -> ('a list * [ `Var ]) t
+    | Machine : Machine.t -> (Executor.t * [ `Machine ]) t
 
   let hash (type a) : a t -> int = function
     | Resource r -> Concrete_resource.hash r
     | Var v -> Concrete_var.hash v
+    | Machine m -> Machine.hash m
 
   let equal (type a b) (l : a t) (r : b t) : (a, b) Het_map.Eq.t =
     match (l, r) with
@@ -194,9 +227,17 @@ module Concrete_key = struct
       match Concrete_var.equal l r with
       | Eq -> Eq
       | Ineq -> Ineq)
-    | Resource _, Var _ | Var _, Resource _ -> Ineq
+    | Machine l, Machine r -> if Machine.equal l r then Eq else Ineq
+    | Resource _, (Var _ | Machine _)
+    | Var _, (Resource _ | Machine _)
+    | Machine _, (Resource _ | Var _) -> Ineq
 
-  type boxed = BKey : 'result t -> boxed [@@unboxed]
+  type boxed = BKey : ('result * 'opts) t -> boxed [@@unboxed]
+
+  let box : type a. a t -> boxed = function
+    | Resource _ as k -> BKey k
+    | Var _ as k -> BKey k
+    | Machine _ as k -> BKey k
 
   (** A key which just exposes the result. Convenient for exposing the extra data as an existential. *)
   type 'result with_res = RKey : ('result * 'data) t -> 'result with_res [@@unboxed]
@@ -204,10 +245,12 @@ module Concrete_key = struct
   let create (type result kind) context : (result, kind) key -> result with_res = function
     | Resource r -> RKey (Resource r)
     | Var v -> RKey (Var (Concrete_var.create v context))
+    | Machine r -> RKey (Machine r)
 
   let pp (type a) out : a t -> unit = function
     | Resource { resource = (module R); key; _ } -> R.pp out key
     | Var v -> Concrete_var.pp out v
+    | Machine r -> Machine.pp out r
 
   module Boxed = struct
     type t = boxed
@@ -258,10 +301,12 @@ module Key_builder = struct
   type 'a t =
     | Resource : ('value, 'options) action_deps -> (unit * [ `Resource of 'value * 'options ]) t
     | Var : ('value list, unit) action_deps -> ('value list * [ `Var ]) t
+    | Machine : (Executor.t * [ `Machine ]) t
 
   let dependencies (type a) : a t -> _ = function
     | Resource r -> r.edges
     | Var r -> r.edges
+    | Machine -> []
 end
 
 module Builder_map = Het_map.Make (Concrete_key) (Key_builder)

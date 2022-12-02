@@ -15,23 +15,5 @@ end
 (** Wrap a log reporter, adding additional tags before dispatching to the original one. *)
 val wrap_logger : Logs.reporter -> Logs.reporter
 
-type change =
-  | ECorrect
-  | ENeedsChange of {
-      diff : Scrutiny_diff.t;
-      apply : unit -> unit Or_exn.t;
-    }
-
-type t = {
-  apply :
-    'key 'value 'options.
-    user:Core.user ->
-    ('key, 'value, 'options) Core.Resource.t ->
-    'key ->
-    'value ->
-    'options ->
-    change Or_exn.t;
-}
-
 (** An executor which applies actions to the local machine. *)
-val local : env:Eio.Stdenv.t -> t
+val local : env:Eio.Stdenv.t -> Core.Executor.t

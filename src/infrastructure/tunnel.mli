@@ -3,4 +3,4 @@
 (** Start a new process which runs a tunnel. *)
 val run_tunnel : env:Eio.Stdenv.t -> unit -> unit
 
-val ssh : sw:Eio.Switch.t -> Core.Remote.t -> (Executor.t, string) result
+val ssh : sw:Eio.Switch.t -> Core.Remote.t -> (Core.Executor.t, string) result

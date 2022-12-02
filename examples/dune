@@ -1,7 +1,18 @@
 (executable
  (name dns)
  (modules dns)
- (libraries fmt.tty logs logs.fmt lwt lwt.unix scrutiny.dns scrutiny.diff))
+ (libraries
+  eio
+  eio_main
+  eio.core
+  fmt.tty
+  logs
+  logs.fmt
+  lwt
+  lwt_eio
+  lwt.unix
+  scrutiny.diff
+  scrutiny.dns))
 
 (executable
  (name journal_tail)

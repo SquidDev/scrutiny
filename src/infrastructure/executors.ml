@@ -38,25 +38,9 @@ let wrap_logger { Logs.report } =
   in
   { Logs.report }
 
-type change =
-  | ECorrect
-  | ENeedsChange of {
-      diff : Scrutiny_diff.t;
-      apply : unit -> unit Or_exn.t;
-    }
-
-type t = {
-  apply :
-    'key 'value 'options.
-    user:user ->
-    ('key, 'value, 'options) Resource.t ->
-    'key ->
-    'value ->
-    'options ->
-    change Or_exn.t;
-}
-
 module LocalExecutor = struct
+  open Executor
+
   let apply_basic (type key value option) ~env (resource : (key, value, option) Resource.t) key
       value option : change Or_exn.t =
     let module R = (val resource) in

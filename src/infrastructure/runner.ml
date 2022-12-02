@@ -9,22 +9,13 @@ module Key_set =
       type 'a t = unit
     end)
 
-module RemoteTbl = Hashtbl.Make (struct
-  type t = Remote.t
-
-  let hash = Hashtbl.hash
-  let equal = ( == )
-end)
-
-type 'a state =
-  | Pending of (bool * 'a, unit) result Promise.t
-  | Finished of (bool * 'a, unit) result
-
-module Packed_state = struct
-  type 'a t = State : 'a state -> ('a * 'e) t [@@unboxed]
+module State = struct
+  type 'a t =
+    | Pending : (bool * 'a, unit) result Promise.t -> ('a * 'k) t
+    | Finished : (bool * 'a, unit) result -> ('a * 'k) t
 end
 
-module State_map = Het_map.Make (Concrete_key) (Packed_state)
+module State_map = Het_map.Make (Concrete_key) (State)
 
 type progress = {
   key_start : Core.Concrete_key.boxed -> unit;
@@ -34,14 +25,15 @@ type progress = {
 let default_progress = { key_start = (fun _ -> ()); key_done = (fun _ -> ()) }
 
 type t = {
-  keys : State_map.t;
-  progress : progress;
-  executors : Executor.t Or_exn.t Promise.t RemoteTbl.t;
-  sw : Switch.t;
-  local_executor : Executor.t;
+  builders : Builder_map.t;  (** Keys which have an explicit build rule defined. *)
+  keys : State_map.t;  (** Keys which are currently being built or have a result. *)
+  sw : Switch.t;  (** The switch where keys are run. *)
+  env : Eio.Stdenv.t;  (** The environment where keys are run. *)
+  progress : progress;  (** Progress callbacks. *)
+  dry_run : bool;
 }
 
-(** Evaluate an action, assuming all dependencies have been built.
+(** Evaluate an action, assuming all dependencies have finished building.
 
     This returns the resulting value, the union of all changed edges, and whether any incoming edge
     changed. *)
@@ -50,12 +42,12 @@ let eval_action (type options) ~options:(module E : Core.EdgeOptions with type t
   let rec go : type ret. (ret, options) action -> (ret * options * bool, unit) result = function
     | Pure v -> Ok (v, E.default, false)
     | Need (options, key) -> (
-        let (State state) = State_map.get_exn store.keys key in
-        match state with
-        | Pending _ -> failwith "Impossible: Key not ready"
-        | Finished (Error ()) -> Error ()
-        | Finished (Ok (changed, ret)) -> Ok (ret, (if changed then options else E.default), changed)
-        )
+      match State_map.get store.keys key with
+      | None -> failwith "Impossible: Key is not defined"
+      | Some (Pending _) -> failwith "Impossible: Key has not finished building"
+      | Some (Finished (Error ())) -> Error ()
+      | Some (Finished (Ok (changed, ret))) ->
+          Ok (ret, (if changed then options else E.default), changed))
     | Bind (x, f) -> go x |> Result.map (fun (res, options, changed) -> (f res, options, changed))
     | Pair (l, r) -> (
       match (go l, go r) with
@@ -67,24 +59,12 @@ let eval_action (type options) ~options:(module E : Core.EdgeOptions with type t
   | Error () -> Error ()
   | Ok (value, options, changed) -> Ok (value, options, changed)
 
-let get_executor ~store:{ executors; sw; local_executor; _ } { Concrete_resource.machine; _ } =
-  match machine with
-  | Local -> Or_exn.Ok local_executor
-  | Remote remote -> (
-    match RemoteTbl.find_opt executors remote with
-    | Some x -> Promise.await x
-    | None ->
-        let await = Or_exn.fork ~sw (fun () -> Tunnel.ssh ~sw remote) in
-        RemoteTbl.replace executors remote await;
-        Promise.await await)
-
-(** Evaluate a rule, assuming all dependencies have been built. *)
-let eval_resource (type key value options) ~dry_run ~store
-    (cresource : (key, value, options) Concrete_resource.t) builder =
-  let { Concrete_resource.resource; key; user; _ } = cresource in
-  let value = builder.term in
+(** "Build" (i.e apply) a resource, assuming all dependencies have been built. *)
+let build_resource (type key value options) ~store
+    ({ resource; key; user; machine } : (key, value, options) Concrete_resource.t) { term; _ } =
   let module R = (val resource) in
-  Executor.PartialKey.with_context (PKey (resource, key)) @@ fun () ->
+  Executors.PartialKey.with_context (PKey (resource, key)) @@ fun () ->
+  let value = Pair (term, Need (R.EdgeOptions.default, Machine machine)) in
   (* Attempt to evaluate the rule. This is 90% error handling and 10% actual code. Sorry! *)
   match eval_action ~options:(module R.EdgeOptions) ~store value with
   | Error () -> Error ()
@@ -92,13 +72,10 @@ let eval_resource (type key value options) ~dry_run ~store
       let bt = Printexc.get_raw_backtrace () in
       Log.err (fun f -> f "Exception getting value for %a: %a" R.pp key Fmt.exn_backtrace (e, bt));
       Error ()
-  | Ok (value, options, _changed) -> (
+  | Ok ((value, executor), options, _changed) -> (
       Log.debug (fun f -> f "Applying: %a" R.pp key);
       let ( let>> ) = Result.bind in
       let ( <?> ) action (err, exn) = Or_exn.log (module Log) action (err, exn) in
-      let>> executor =
-        get_executor ~store cresource <?> ("Failed to get executor", "Exception getting executor")
-      in
       let>> result =
         executor.apply ~user resource key value options
         <?> ("Failed to compute changes", "Exception computing changes")
@@ -109,12 +86,13 @@ let eval_resource (type key value options) ~dry_run ~store
           Ok (false, ())
       | ENeedsChange { diff; apply } ->
           Log.info (fun f -> f "Applying %a:@\n%a" R.pp key (Scrutiny_diff.pp ~full:false) diff);
-          if dry_run then Ok (true, ())
+          if store.dry_run then Ok (true, ())
           else
             let>> () = apply () <?> ("Failed to apply changes", "Exception applying changes") in
             Ok (true, ()))
 
-let eval_var ~store var value =
+(** Build a variable, assuming all dependencies have been built. *)
+let build_var ~store var value =
   match eval_action ~options:(module Types.Unit) ~store value.term with
   | Error () -> Error ()
   | exception e ->
@@ -124,41 +102,97 @@ let eval_var ~store var value =
       Error ()
   | Ok (value, _options, changed) -> Ok (changed, value)
 
-let build_rule (type r opts) ~dry_run ~store (key : (r * opts) Concrete_key.t)
-    (builder : (r * opts) Key_builder.t) resolve =
-  let dependencies = Key_builder.dependencies builder in
-  let rec eval_deps = function
-    | [] -> Ok ()
-    | Concrete_key.BKey dep :: deps -> (
-        let (State state) = State_map.get_exn store.keys dep in
-        let result =
-          match state with
-          | Finished f -> f
-          | Pending x -> Promise.await x
-        in
-        match result with
-        | Ok _ -> eval_deps deps
-        | Error _ -> Error ())
-  in
+let build_machine ~store:{ env; sw; _ } (machine : Machine.t) =
+  match machine with
+  | Local -> Ok (false, Executors.local ~env)
+  | Remote remote -> (
+    match Tunnel.ssh ~sw remote with
+    | Ok exec -> Ok (false, exec)
+    | Error e ->
+        Log.err (fun f -> f "Failed to open tunnel to %s: %s" remote.host e);
+        Error ()
+    | exception e ->
+        let bt = Printexc.get_raw_backtrace () in
+        Log.err (fun f -> f "Failed to open tunnel to %s: %a" remote.host Fmt.exn_backtrace (e, bt));
+        Error ())
 
-  let result : (bool * r, unit) result =
-    match eval_deps dependencies with
-    | Ok () -> (
+(** Build a rule, assuming all dependencies have been built. *)
+let build_impl (type r opts) ~store (key : (r * opts) Concrete_key.t)
+    (builder : (r * opts) Key_builder.t) : (bool * r, unit) result =
+  match (key, builder) with
+  | Resource key, Resource builder -> build_resource ~store key builder
+  | Var key, Var builder -> build_var ~store key builder
+  | Machine key, Machine -> build_machine ~store key
+
+let all_dependencies (type t) (key : t Concrete_key.t) (builder : t Key_builder.t) =
+  let dependencies = Key_builder.dependencies builder in
+  match key with
+  (* We add an extra dependenciy on the machine, as that's also injected in eval_resource. *)
+  | Resource r -> Concrete_key.BKey (Machine r.machine) :: dependencies
+  | Var _ | Machine _ -> dependencies
+
+(** Wait for all rules to be built, assuming they have already been started. *)
+let rec await_rules ~store = function
+  | [] -> Ok ()
+  | Concrete_key.BKey x :: xs -> (
+      let continue = function
+        | Ok _ -> await_rules ~store xs
+        | Error _ -> Error ()
+      in
+      match State_map.get_exn store.keys x with
+      | Finished f -> continue f
+      | Pending x -> Promise.await x |> continue)
+
+(** Enqueue a rule to be built. *)
+let rec start_rule ~store (Concrete_key.BKey key) =
+  match State_map.get store.keys key with
+  | Some _ -> ()
+  | None -> (
+      let builder =
+        match (Builder_map.get store.builders key, key) with
+        | Some builder, _ -> Some builder
+        | None, Var _ -> Some (Var { edges = []; term = Pure [] })
+        | None, Machine _ -> Some Machine
+        | None, Resource _ -> None
+      in
+      match builder with
+      | Some builder ->
+          let promise, resolve =
+            Promise.create ~label:(Format.asprintf "Build %a" Concrete_key.pp key) ()
+          in
+          State_map.set store.keys key (Pending promise);
+          Fiber.fork ~sw:store.sw (fun () -> build_rule ~store key builder resolve)
+      | None ->
+          Log.err (fun f -> f "%a is not defined" Concrete_key.pp key);
+          State_map.set store.keys key (Finished (Error ())))
+
+and build_rule :
+      'r 'opts.
+      store:t ->
+      ('r * 'opts) Concrete_key.t ->
+      ('r * 'opts) Key_builder.t ->
+      (bool * 'r, unit) result Promise.u ->
+      unit =
+ fun ~store key builder resolve ->
+  let dependencies = all_dependencies key builder in
+  List.iter (start_rule ~store) dependencies;
+  let result : (bool * 'r, unit) result =
+    match await_rules ~store dependencies with
+    | Ok () ->
         store.progress.key_start (BKey key);
-        match (key, builder) with
-        | Resource key, Resource builder -> eval_resource ~dry_run ~store key builder
-        | Var key, Var builder -> eval_var ~store key builder)
+        build_impl ~store key builder
     | Error () -> Error ()
   in
 
-  State_map.set store.keys key (Packed_state.State (Finished result));
+  State_map.set store.keys key (Finished result);
   Promise.resolve resolve result;
   store.progress.key_done (BKey key)
 
 let check_graph rules =
   let visited = Key_set.create (Builder_map.length rules) in
   let rec go stack (BKey key as bkey : Concrete_key.boxed) =
-    if not (Builder_map.mem rules key) then Error "Missing node in rule list"
+    let rule = Builder_map.get rules key in
+    if Option.is_none rule then Error "Missing node in rule list"
     else if
       List.exists
         (fun (Concrete_key.BKey other) -> Concrete_key.equal key other |> Het_map.Eq.to_bool)
@@ -171,7 +205,7 @@ let check_graph rules =
     else if Key_set.mem visited key then Ok ()
     else (
       Key_set.set visited key ();
-      Builder_map.get_exn rules key |> Key_builder.dependencies |> go_all (bkey :: stack))
+      Option.get rule |> Key_builder.dependencies |> go_all (bkey :: stack))
   and go_all stack = function
     | [] -> Ok ()
     | x :: xs -> (
@@ -188,7 +222,7 @@ let check_graph rules =
       | Error _ as e -> e)
   in
   Builder_map.to_seq rules
-  |> Seq.map (fun (Builder_map.Packed (k, _)) -> Concrete_key.BKey k)
+  |> Seq.map (fun (Builder_map.Packed (k, _)) -> Concrete_key.box k)
   |> go_seq
 
 type run_result = {
@@ -198,35 +232,27 @@ type run_result = {
 }
 
 let apply ~env ?(progress = default_progress) ?(dry_run = false) (rules : Rules.rules) =
-  Switch.run @@ fun sw ->
-  let total = Builder_map.length rules in
-  let keys = State_map.create total in
-  let store =
-    { keys; progress; executors = RemoteTbl.create 2; sw; local_executor = Executor.local ~env }
-  in
-
-  (* Nasty indirection to cope with our definition of Concrete_key. *)
-  let add_task key builder =
-    let task, resolve = Promise.create () in
-    State_map.set keys key (State (Pending task));
-    fun () -> build_rule ~dry_run ~store key builder resolve
-  in
-  let tasks =
-    Builder_map.to_seq rules
-    |> Seq.map (fun (Builder_map.Packed (key, builder)) ->
-           match key with
-           | Concrete_key.Resource _ -> add_task key builder
-           | Concrete_key.Var _ -> add_task key builder)
-    |> CCSeq.to_rev_list
-  in
   match check_graph rules with
   | Error e -> Error e
   | Ok () ->
-      Fiber.all tasks;
+      let tasks =
+        Builder_map.to_seq rules
+        |> Seq.filter_map (fun (Builder_map.Packed (key, _)) ->
+               match key with
+               | Concrete_key.Resource _ -> Some (Concrete_key.BKey key)
+               | Concrete_key.Var _ | Concrete_key.Machine _ -> None)
+        |> CCSeq.to_rev_list
+      in
+
+      Switch.run @@ fun sw ->
+      let keys = State_map.create (Builder_map.length rules) in
+      let store = { keys; builders = rules; progress; sw; env; dry_run } in
+      List.iter (start_rule ~store) tasks;
+      await_rules ~store tasks |> ignore;
       let changed, failed =
         State_map.to_seq keys
         |> Seq.fold_left
-             (fun (changed, failed) (State_map.Packed (_, State result)) ->
+             (fun (changed, failed) (State_map.Packed (_, result)) ->
                match result with
                | Finished (Ok (false, _)) -> (changed, failed)
                | Finished (Ok (true, _)) -> (changed + 1, failed)

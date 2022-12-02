@@ -1,7 +1,7 @@
 open Eio.Std
 include Core
 include Types
-module PTbl = Hashtbl.Make (Executor.PartialKey)
+module PTbl = Hashtbl.Make (Executors.PartialKey)
 
 module ProgressHelpers = struct
   open Progress.Line
@@ -74,6 +74,8 @@ module ProgressHelpers = struct
           in
           (* TODO: Pretty-print context. *)
           var_name
+      | Machine Local -> const "Local executor"
+      | Machine (Remote r) -> constf "Tunnel to %s" r.host
     in
     list [ spinner (); task_name; const "»"; string; elapsed_since counter ]
 end
@@ -103,7 +105,7 @@ module LogsHelpers = struct
       in
 
       msgf @@ fun ?header:_ ?(tags = Logs.Tag.empty) fmt ->
-      match Logs.Tag.find Executor.PartialKey.tag tags with
+      match Logs.Tag.find Executors.PartialKey.tag tags with
       | None -> Format.ikfprintf k str_format fmt
       | Some key -> (
         match PTbl.find_opt active_keys key with
@@ -132,7 +134,7 @@ module LogsHelpers = struct
     let pp_key out key =
       match key with
       | None -> ()
-      | Some (Executor.PartialKey.PKey (resource, key)) ->
+      | Some (Executors.PartialKey.PKey (resource, key)) ->
           let module R = (val resource) in
           Fmt.pf out "%a » " R.pp key
     in
@@ -145,7 +147,7 @@ module LogsHelpers = struct
     let report src level ~over k msgf =
       let k _ = over (); k () in
       msgf @@ fun ?header ?(tags = Logs.Tag.empty) fmt ->
-      let key = Logs.Tag.find Executor.PartialKey.tag tags in
+      let key = Logs.Tag.find Executors.PartialKey.tag tags in
       Format.kfprintf k Format.err_formatter
         ("%a@[%a" ^^ fmt ^^ "@]@.")
         pp_header (level, header, src) pp_key key
@@ -167,8 +169,8 @@ let progress_tracker ~sw ~clock ~active_keys ~total =
   in
   let pkey (Concrete_key.BKey key) =
     match key with
-    | Resource { resource; key; _ } -> Some (Executor.PartialKey.PKey (resource, key))
-    | Var _ -> None
+    | Resource { resource; key; _ } -> Some (Executors.PartialKey.PKey (resource, key))
+    | Var _ | Machine _ -> None
   in
 
   (* Unconditionally set the line. *)
@@ -280,7 +282,7 @@ let main rules_def =
 
     (* Set up log handlers. We do this inside eio so that the effect handlers are installed. *)
     LogsHelpers.(combine_reporters (capturing_reporter active_keys) (logs_reporter (level = Debug)))
-    |> Executor.wrap_logger |> Progress.instrument_logs_reporter |> Logs.set_reporter;
+    |> Executors.wrap_logger |> Progress.instrument_logs_reporter |> Logs.set_reporter;
 
     (* Evaluate rules. *)
     let rules = Builder_map.create 16 in

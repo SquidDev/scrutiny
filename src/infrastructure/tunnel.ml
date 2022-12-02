@@ -1,7 +1,7 @@
 open Core
 module ITbl = Hashtbl.Make (CCInt)
 module STbl = Hashtbl.Make (CCString)
-module PTbl = Hashtbl.Make (Executor.PartialKey)
+module PTbl = Hashtbl.Make (Executors.PartialKey)
 module Log = (val Logs.src_log (Logs.Src.create __MODULE__))
 
 type user =
@@ -96,7 +96,7 @@ module Logging = struct
     let report (type a b) src level ~over k (msg : (a, b) Logs.msgf) : b =
       msg @@ fun ?header ?(tags = Logs.Tag.empty) fmt ->
       let key =
-        match Logs.Tag.find Executor.PartialKey.tag tags with
+        match Logs.Tag.find Executors.PartialKey.tag tags with
         | None -> None
         | Some key -> PTbl.find_opt keys key
       in
@@ -115,7 +115,7 @@ module Logging = struct
         let tags =
           match Option.bind key (ITbl.find_opt keys) with
           | None -> tags
-          | Some key -> Logs.Tag.add Executor.PartialKey.tag key tags
+          | Some key -> Logs.Tag.add Executors.PartialKey.tag key tags
         in
         f ~tags ?header "%s" message)
 end
@@ -316,7 +316,7 @@ let make_executor_factory ~env ?switch () : Core.user -> Executor.t Or_exn.t Lwt
         ITbl.replace user_tunnels user tunnel;
         tunnel
   in
-  let local = Executor.local ~env in
+  let local = Executors.local ~env in
   let find user : Executor.t Or_exn.t Lwt.t =
     match%lwt find_user user with
     | Error msg -> Lwt.return (Or_exn.Error msg)
@@ -413,6 +413,6 @@ let run_tunnel ~env () : unit =
 
   (* Set up our forwarding log reporter. *)
   Logging.reporter keys (fun msg -> Lwt.async (fun () -> Log msg |> send))
-  |> Executor.wrap_logger |> Logs.set_reporter;
+  |> Executors.wrap_logger |> Logs.set_reporter;
 
   run ()

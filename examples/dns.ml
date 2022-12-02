@@ -1,8 +1,8 @@
+open Eio.Std
 open Scrutiny_dns
 
 let source : source =
-  let token = Sys.getenv "PORKBUN_API_TOKEN" in
-  Porkbun { token }
+  Porkbun { api_key = Sys.getenv "PORKBUN_API_KEY"; secret = Sys.getenv "PORKBUN_API_SECRET" }
 
 let site, records =
   let open DnsRecord.Spec in
@@ -16,15 +16,15 @@ let () =
   Fmt_tty.setup_std_outputs ();
   Logs.set_level ~all:true (Some Info);
   Logs.set_reporter (Logs_fmt.reporter ());
-  exit @@ Lwt_main.run
-  @@
-  let open Lwt.Syntax in
-  Client.with_client source @@ fun client ->
-  let* task = Zone.find ~client site in
-  let+ ok, result =
-    match task with
-    | Some zone -> DnsRecord.Spec.sync ~dryrun:true ~client ~zone records
-    | None -> Lwt.return (Error (Format.asprintf "Cannot find %s" site), Scrutiny_diff.empty)
+
+  exit @@ Eio_main.run
+  @@ fun env ->
+  Switch.run @@ fun sw ->
+  let client = Client.create ~sw ~clock:env#clock ~net:env#net source in
+  let ok, result =
+    match Zone.find ~client site with
+    | Ok zone -> DnsRecord.Spec.sync ~dryrun:true ~client ~zone records
+    | Error e -> (Error (Format.asprintf "Cannot find %s: %s" site e), Scrutiny_diff.empty)
   in
   Format.printf "%a@." (Scrutiny_diff.pp ~full:false) result;
   match ok with

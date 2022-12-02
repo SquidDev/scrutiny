@@ -13,7 +13,7 @@
     -w
     +A-4-40-42-44-48-66-70
     -strict-sequence
-    -safe-string
+    ; -safe-string
     -g
     -annot)))
  (release

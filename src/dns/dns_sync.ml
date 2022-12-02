@@ -144,17 +144,17 @@ module Sync = struct
           (* Otherwise there's no point trying to find the minimal set of updates. Just clobber
              everything. We bulk-delete and then bulk-insert, just to avoid any potential race
              conditions. *)
-          let result = Fiber.map (Updates.delete ~dryrun ~client ~zone) records in
+          let result = Fiber.List.map (Updates.delete ~dryrun ~client ~zone) records in
           match accumulate result with
           | false, result -> (false, result)
           | true, result ->
-              let result' = Fiber.map (Updates.add ~dryrun ~client ~zone) spec in
+              let result' = Fiber.List.map (Updates.add ~dryrun ~client ~zone) spec in
               let ok, result' = accumulate result' in
               (ok, result @ result'))
     and ok', overlaps =
       (* In parallel to the above, perform in-sequence updates. *)
       SMap.to_seq overlap |> List.of_seq
-      |> Fiber.map (fun (_, (spec, record)) ->
+      |> Fiber.List.map (fun (_, (spec, record)) ->
              if Option.fold ~none:true ~some:(fun ttl -> ttl = record.Dns_record.ttl) spec.ttl then (
                Log.debug (fun f -> f "Nothing to do for record %a" Dns_record.pp record);
                (true, [ (`Same, Format.asprintf "%a" pp spec) ]))
@@ -199,7 +199,7 @@ module Sync = struct
                 Some (spec, records))
               spec records
             |> KMap.to_seq |> List.of_seq
-            |> Fiber.map (fun (_, (spec, records)) ->
+            |> Fiber.List.map (fun (_, (spec, records)) ->
                    sync_domain ~dryrun ~client:client_ ~zone spec records)
           in
           let ok = List.for_all fst xs in
