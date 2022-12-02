@@ -17,6 +17,33 @@ end
 
 module State_map = Het_map.Make (Concrete_key) (State)
 
+module Log_tag = struct
+  let tag = Logs.Tag.def "BoxedKey" (fun out (Concrete_key.BKey key) -> Concrete_key.pp out key)
+
+  (** An {!Eio.Fiber.key} marking which key we're currently running. *)
+  let context : Concrete_key.boxed Eio.Fiber.key = Eio.Fiber.create_key ()
+
+  let with_context key fn = Eio.Fiber.with_binding context key fn
+
+  let wrap { Logs.report } =
+    let owner_thread = Thread.self () |> Thread.id in
+    let report src level ~over k msgf =
+      (* Only call Fiber.get on the Eio thread. *)
+      let key = if Thread.id (Thread.self ()) = owner_thread then Fiber.get context else None in
+      report src level ~over k @@ fun f ->
+      msgf @@ fun ?header ?(tags = Logs.Tag.empty) fmt ->
+      let tags =
+        if Logs.Tag.mem tag tags then tags
+        else
+          match key with
+          | Some key -> Logs.Tag.add tag key tags
+          | None -> tags
+      in
+      f ?header ~tags fmt
+    in
+    { Logs.report }
+end
+
 type progress = {
   key_start : Core.Concrete_key.boxed -> unit;
   key_done : Core.Concrete_key.boxed -> unit;
@@ -63,7 +90,6 @@ let eval_action (type options) ~options:(module E : Core.EdgeOptions with type t
 let build_resource (type key value options) ~store
     ({ resource; key; user; machine } : (key, value, options) Concrete_resource.t) { term; _ } =
   let module R = (val resource) in
-  Executors.PartialKey.with_context (PKey (resource, key)) @@ fun () ->
   let value = Pair (term, Need (R.EdgeOptions.default, Machine machine)) in
   (* Attempt to evaluate the rule. This is 90% error handling and 10% actual code. Sorry! *)
   match eval_action ~options:(module R.EdgeOptions) ~store value with
@@ -106,7 +132,7 @@ let build_machine ~store:{ env; sw; _ } (machine : Machine.t) =
   match machine with
   | Local -> Ok (false, Executors.local ~env)
   | Remote remote -> (
-    match Tunnel.ssh ~sw remote with
+    match Tunnel.ssh ~env ~sw remote with
     | Ok exec -> Ok (false, exec)
     | Error e ->
         Log.err (fun f -> f "Failed to open tunnel to %s: %s" remote.host e);
@@ -180,7 +206,7 @@ and build_rule :
     match await_rules ~store dependencies with
     | Ok () ->
         store.progress.key_start (BKey key);
-        build_impl ~store key builder
+        Log_tag.with_context (BKey key) @@ fun () -> build_impl ~store key builder
     | Error () -> Error ()
   in
 

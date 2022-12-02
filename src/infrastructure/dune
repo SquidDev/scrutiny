@@ -5,17 +5,19 @@
   ; Core libraries
   containers
   eio
-  eio_main
   eio.core
+  eio_main
+  eio_process
+  eio_unix_async
   fmt
   fpath
   logs
-  lwt
   lwt_eio
-  lwt.unix
   ppx_yojson_conv_lib
   result
   scrutiny.diff
+  scrutiny.rpc
+  threads
   unix
   yojson
   ; Command line

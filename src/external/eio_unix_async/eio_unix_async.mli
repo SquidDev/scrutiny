@@ -24,3 +24,6 @@ val getpwnam : string -> Unix.passwd_entry
 
 (** See {!Unix.getgrnam} *)
 val getgrnam : string -> Unix.group_entry
+
+(** See {!Unix.getpwuid} *)
+val getpwuid : int -> Unix.passwd_entry

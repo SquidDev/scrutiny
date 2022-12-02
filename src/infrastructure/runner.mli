@@ -1,3 +1,12 @@
+(** Support for annotating log messages with the currently running rule. *)
+module Log_tag : sig
+  (** The key currently being built. *)
+  val tag : Core.Concrete_key.boxed Logs.Tag.def
+
+  (** Wrap a log reporter, adding additional tags before dispatching to the original one. *)
+  val wrap : Logs.reporter -> Logs.reporter
+end
+
 type run_result = {
   total : int;
   changed : int;

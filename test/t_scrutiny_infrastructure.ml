@@ -70,6 +70,9 @@ let with_container fn : unit Lwt.t =
       |]
   in
 
+  (* Sleep a bit to wait for systemd to come up. *)
+  let%lwt () = Lwt_unix.sleep 1.0 in
+
   Lwt.finalize (fun () -> fn name) (fun () -> run_command [| docker; "kill"; name |])
 
 (** Create a new container and apply a set of rules targetting that container. *)

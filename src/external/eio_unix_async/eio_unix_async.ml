@@ -61,3 +61,4 @@ let chown name uid gid = run ~name:"chown" @@ fun () -> Unix.chown name uid gid
 let chmod name perms = run ~name:"chmod" @@ fun () -> Unix.chmod name perms
 let getpwnam name = run ~name:"getpwnam" @@ fun () -> Unix.getpwnam name
 let getgrnam name = run ~name:"getgrnam" @@ fun () -> Unix.getgrnam name
+let getpwuid name = run ~name:"getpwuid" @@ fun () -> Unix.getpwuid name

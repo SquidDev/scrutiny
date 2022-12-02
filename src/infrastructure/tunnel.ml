@@ -1,7 +1,7 @@
+open Eio.Std
 open Core
 module ITbl = Hashtbl.Make (CCInt)
 module STbl = Hashtbl.Make (CCString)
-module PTbl = Hashtbl.Make (Executors.PartialKey)
 module Log = (val Logs.src_log (Logs.Src.create __MODULE__))
 
 type user =
@@ -20,11 +20,6 @@ module Diff = struct
     | `String x -> Marshal.from_string x 0
     | _ -> raise (Yojson.Json_error "Malformed Scrutiny_diff")
 end
-
-let pp_exception out = function
-  | Ppx_yojson_conv_lib.Yojson_conv.Of_yojson_error (e, json) ->
-      Fmt.pf out "%a in %a" Fmt.exn e (Yojson.Safe.pretty_print ~std:false) json
-  | e -> Fmt.exn out e
 
 module AppliedResource = struct
   type ('key, 'value, 'options) t = {
@@ -74,345 +69,203 @@ module AppliedResource = struct
       ]
 end
 
-module Logging = struct
-  type level = Logs.level =
-    | App
-    | Error
-    | Warning
-    | Info
-    | Debug
-  [@@deriving yojson]
+type check_result = [ `Correct | `NeedsChange of int * Diff.t ] Or_exn.t [@@deriving yojson]
 
-  type record = {
-    level : level;
-    src : string;
-    message : string;
-    header : string option;
-    key : int option; [@yojson.default None]
-  }
-  [@@deriving yojson]
+module Signatures = struct
+  open Scrutiny_rpc.Method
 
-  let reporter keys send =
-    let report (type a b) src level ~over k (msg : (a, b) Logs.msgf) : b =
-      msg @@ fun ?header ?(tags = Logs.Tag.empty) fmt ->
-      let key =
-        match Logs.Tag.find Executors.PartialKey.tag tags with
-        | None -> None
-        | Some key -> PTbl.find_opt keys key
-      in
-      Format.kasprintf
-        (fun message ->
-          send { header; level; src = Logs.Src.name src; message; key };
-          over ();
-          k ())
-        fmt
-    in
-    { Logs.report }
+  let applied_resource = value AppliedResource.boxed_of_yojson AppliedResource.yojson_of_boxed
+  let check_result = value check_result_of_yojson yojson_of_check_result
 
-  let log_record keys { level; src = _; message; header; key } =
-    Log.msg level (fun f ->
-        let tags = Logs.Tag.empty in
-        let tags =
-          match Option.bind key (ITbl.find_opt keys) with
-          | None -> tags
-          | Some key -> Logs.Tag.add Executors.PartialKey.tag key tags
-        in
-        f ~tags ?header "%s" message)
+  (** Check a resource is up-to-date. *)
+  let check_resource = make "scrutiny/check" (applied_resource @-> returning check_result)
+
+  (** Apply a resource *)
+  let apply_resource =
+    make "scrutiny/apply"
+      (int
+      @-> returning (value (Or_exn.t_of_yojson unit_of_yojson) (Or_exn.yojson_of_t yojson_of_unit))
+      )
 end
 
-type to_server =
-  | Check of {
-      id : int;
-      resource : AppliedResource.boxed;
-    }
-  | Apply of { id : int }
-[@@deriving yojson]
+(** The prefix for our magic version string *)
+let magic_prefix = ";;scrutiny-infra-tunnel:"
 
-type to_client =
-  | Init of {
-      message : string;
-      version : string;
-    }
-  | CheckResult of {
-      id : int;
-      result : [ `Correct | `NeedsChange of Diff.t ] Or_exn.t;
-    }
-  | ApplyResult of {
-      id : int;
-      result : unit Or_exn.t;
-    }
-  | Log of Logging.record
-[@@deriving yojson]
+(** Our current version. *)
+let our_version = "%VERSION%"
 
 (** Build a cached lookup of users to specific uids. *)
 let make_user_lookup () =
   let current_user = Unix.getuid () in
   let user_ids = STbl.create 4 in
-  let get_user_id : Core.user -> (int, string) result Lwt.t = function
-    | `Current -> Lwt.return_ok current_user
-    | `Id x -> Lwt.return_ok x
+  let get_user_id : Core.user -> (int, string) result = function
+    | `Current -> Ok current_user
+    | `Id x -> Ok x
     | `Name name -> (
       match STbl.find_opt user_ids name with
-      | Some x -> Lwt.return x
+      | Some x -> x
       | None ->
-          let%lwt res =
-            match%lwt Lwt_unix.getpwnam name with
-            | { pw_uid; _ } -> Lwt.return_ok pw_uid
+          let res =
+            match Eio_unix_async.getpwnam name with
+            | { pw_uid; _ } -> Ok pw_uid
             | exception Unix.Unix_error (Unix.ENOENT, _, _) ->
-                Lwt.return_error (Printf.sprintf "User %S not found" name)
+                Error (Printf.sprintf "User %S not found" name)
           in
-          STbl.replace user_ids name res; Lwt.return res)
+          STbl.replace user_ids name res; res)
   in
   get_user_id
 
-type channels = {
-  stdin : Lwt_io.output_channel;
-  stdout : Lwt_io.input_channel;
-  stderr : Lwt_io.input_channel;
-}
-
-let wait_for_init (proc : channels) =
+let wait_for_init ~clock ~input ~output:_ =
   let rec gobble () =
-    match%lwt Lwt_io.read_line proc.stdout with
+    match Eio.Buf_read.line input with
     | input -> (
-      match Yojson.Safe.from_string input |> to_client_of_yojson with
-      | Init { version; _ } when version = "%VERSION%" -> Lwt.return_ok ()
-      | Init { version; _ } ->
-          Printf.sprintf "Tunnel version %s is incompatible with current version %s" version
-            "%VERSION%"
-          |> Lwt.return_error
-      | _ -> Lwt.return_error "Unexpected other message"
-      | exception Yojson.Json_error _ -> gobble ())
-    | exception End_of_file -> Lwt.return_error "Unexpected end of file"
+      match CCString.chop_prefix ~pre:magic_prefix input with
+      | None ->
+          Log.warn (fun f -> f "Ignoring unexpected input %s" input);
+          gobble ()
+      | Some version ->
+          if version = our_version then Ok ()
+          else
+            Printf.sprintf "Tunnel version %s is incompatible with current version %s" version
+              our_version
+            |> Result.error)
+    | exception End_of_file -> Error "Unexpected end of file"
   in
-  try%lwt Lwt_unix.with_timeout 5.0 gobble
-  with Lwt_unix.Timeout -> Lwt.return_error "Tunnel failed after a timeout."
+  try Eio.Time.with_timeout_exn clock 5.0 gobble
+  with Eio.Time.Timeout -> Error "Tunnel failed after a timeout."
 
-let rec drain ?switch (proc : channels) =
-  match%lwt Lwt_io.read_line proc.stderr with
-  | exception End_of_file -> Lwt.return_unit
-  | exception Lwt_io.Channel_closed _ -> Lwt.return_unit
-  | line ->
-      Log.err (fun e -> e "%s" line);
-      if Option.fold ~none:true ~some:Lwt_switch.is_on switch then drain ?switch proc
-      else Lwt.return_unit
-
-let executor ?switch ~input ~output () : Executor.t =
-  let counter = ref 0 in
-  let check_wait = ITbl.create 32 in
-  let apply_wait = ITbl.create 32 in
-  let keys = ITbl.create 32 in
-  Lwt_switch.check switch;
-
-  let background =
-    let rec go () =
-      match%lwt Lwt_io.read_line input with
-      | line ->
-          (match Yojson.Safe.from_string line |> to_client_of_yojson with
-          | Init _ -> Log.err (fun f -> f "Impossible: Additional init message")
-          | CheckResult { id; result } -> Lwt.wakeup_later (ITbl.find check_wait id) result
-          | ApplyResult { id; result } -> Lwt.wakeup_later (ITbl.find apply_wait id) result
-          | Log msg -> Logging.log_record keys msg
-          | exception e -> Log.err (fun f -> f "Error reading tunnel message (%a)" pp_exception e));
-          go ()
-      | exception End_of_file -> Lwt.return_unit
-    in
-    go ()
+let drain stderr =
+  let stderr = Eio.Buf_read.of_flow ~max_size:(1024 * 1024) stderr in
+  let rec go () =
+    match Eio.Buf_read.line stderr with
+    | exception End_of_file -> ()
+    | line ->
+        Log.err (fun e -> e "%s" line);
+        go ()
   in
-  Lwt_switch.add_hook switch (fun () -> Lwt.cancel background; Lwt.return_unit);
+  go ()
 
-  let apply id =
-    Lwt_switch.check switch;
+let executor ~sw ~input ~output () : Executor.t =
+  let rpc = Scrutiny_rpc.create ~sw [] input output in
 
-    let wait, notify = Lwt.wait () in
-    ITbl.replace apply_wait id notify;
-
-    let message = Apply { id } |> yojson_of_to_server |> Yojson.Safe.to_string in
-    let%lwt () = Lwt_io.atomic (fun out -> Lwt_io.write_line out message) output in
-    wait
-  in
+  let apply (id : int) = Scrutiny_rpc.call rpc Signatures.apply_resource id in
 
   let check ~user resource key value options =
-    Lwt_eio.run_lwt @@ fun () ->
-    Lwt_switch.check switch;
-
     let resource_box = AppliedResource.Boxed { resource; key; value; options; user } in
-    let id = !counter in
-    incr counter;
-    ITbl.replace keys id (PKey (resource, key));
-
-    let wait, notify = Lwt.wait () in
-    ITbl.replace check_wait id notify;
-
-    let message =
-      Check { id; resource = resource_box } |> yojson_of_to_server |> Yojson.Safe.to_string
-    in
-    let%lwt () = Lwt_io.atomic (fun out -> Lwt_io.write_line out message) output in
-    let%lwt result = wait in
-    let result =
-      result
-      |> Or_exn.map @@ function
-         | `Correct -> Executor.ECorrect
-         | `NeedsChange diff ->
-             Executor.ENeedsChange
-               { diff; apply = (fun () -> Lwt_eio.run_lwt @@ fun () -> apply id) }
-    in
-    Lwt.return result
+    Scrutiny_rpc.call rpc Signatures.check_resource resource_box
+    |> Or_exn.map @@ function
+       | `Correct -> Executor.ECorrect
+       | `NeedsChange (id, diff) -> Executor.ENeedsChange { diff; apply = (fun () -> apply id) }
   in
   { Executor.apply = check }
 
-let executor_of_cmd ?switch setup cmd =
-  Lwt_switch.check switch;
+let executor_of_cmd ~sw setup cmd =
+  Switch.check sw;
 
-  let stdin_r, stdin_w = Unix.pipe ~cloexec:true ()
-  and stdout_r, stdout_w = Unix.pipe ~cloexec:true ()
-  and stderr_r, stderr_w = Unix.pipe ~cloexec:true () in
-  let proc = Unix.create_process cmd.(0) cmd stdin_r stdout_w stderr_w in
+  let _proc, channels = Eio_process.spawn_full ~sw cmd.(0) cmd in
+  Fiber.fork_daemon ~sw (fun () -> drain channels.stderr; `Stop_daemon);
 
-  let channels =
-    {
-      stdin = Lwt_io.of_unix_fd ~mode:Lwt_io.output stdin_w;
-      stdout = Lwt_io.of_unix_fd ~mode:Lwt_io.input stdout_r;
-      stderr = Lwt_io.of_unix_fd ~mode:Lwt_io.input stderr_r;
-    }
-  in
-  let close () =
-    let%lwt () =
-      Lwt.protected
-        (Lwt.join
-           [
-             Lwt_io.close channels.stdin; Lwt_io.close channels.stdout; Lwt_io.close channels.stderr;
-           ])
-    in
-    Lwt_unix.wait4 [] proc
-  in
+  let input = Eio.Buf_read.of_flow ~max_size:(1024 * 1024) channels.stdout in
+  let output = channels.stdin in
+  match Eio.Buf_write.with_flow output @@ fun output -> setup ~input ~output with
+  | Ok () -> Ok (executor ~sw ~input ~output ())
+  | Error e -> Error e
 
-  Lwt_switch.add_hook switch (fun () ->
-      let%lwt _ = close () in
-      Lwt.return_unit);
-  Lwt.async (fun () -> drain ?switch channels);
-  match%lwt setup channels with
-  | Ok () -> Lwt.return_ok (executor ?switch ~input:channels.stdout ~output:channels.stdin ())
-  | Error e -> Lwt.return_error e
-
-let make_executor_factory ~env ?switch () : Core.user -> Executor.t Or_exn.t Lwt.t =
-  Lwt_switch.check switch;
-
+let make_executor_factory ~env ~sw () : Core.user -> Executor.t Or_exn.t =
   let current_user = Unix.getuid () in
   let find_user = make_user_lookup () in
   let user_tunnels = ITbl.create 4 in
 
   let create uid =
-    let%lwt user = Lwt_unix.getpwuid uid in
+    let user = Eio_unix_async.getpwuid uid in
     Log.info (fun f -> f "Opening tunnel for %S (%d)" user.Unix.pw_name uid);
-    executor_of_cmd ?switch wait_for_init
+    executor_of_cmd ~sw (wait_for_init ~clock:env#clock)
       [| "sudo"; "--user"; user.Unix.pw_name; Sys.executable_name |]
   in
   let memo user =
     match ITbl.find_opt user_tunnels user with
-    | Some x -> x
+    | Some x -> Promise.await x
     | None ->
-        let tunnel = Or_exn.run_lwt (fun () -> create user) in
-        ITbl.replace user_tunnels user tunnel;
-        tunnel
+        let await, resolve = Promise.create ~label:"User Tunnel" () in
+        ITbl.replace user_tunnels user await;
+        Fiber.fork ~sw (fun () -> Or_exn.run (fun () -> create user) |> Promise.resolve resolve);
+        Promise.await await
   in
   let local = Executors.local ~env in
-  let find user : Executor.t Or_exn.t Lwt.t =
-    match%lwt find_user user with
-    | Error msg -> Lwt.return (Or_exn.Error msg)
+  let find user : Executor.t Or_exn.t =
+    match find_user user with
+    | Error msg -> Or_exn.Error msg
     | Ok user ->
-        if user = current_user then Lwt.return (Or_exn.Ok local)
-        else if current_user <> 0 then
-          Lwt.return (Or_exn.Error "Cannot use different users when not root")
+        if user = current_user then Or_exn.Ok local
+        else if current_user <> 0 then Or_exn.Error "Cannot use different users when not root"
         else memo user
   in
   find
 
-let ssh ~sw ({ sudo_pw; host; tunnel_path } : Remote.t) =
-  Lwt_eio.run_lwt @@ fun () ->
-  let switch = Lwt_switch.create () in
-  Eio.Switch.on_release sw (fun () -> Lwt_switch.turn_off switch |> Lwt_eio.Promise.await_lwt);
-
+let ssh ~(env : Eio.Stdenv.t) ~sw ({ sudo_pw; host; tunnel_path } : Remote.t) =
   let setup, cmd =
     let ssh = Sys.getenv_opt "SCRUTINY_SSH" |> Option.value ~default:"ssh" in
     match sudo_pw with
-    | None -> (wait_for_init, [| ssh; host; tunnel_path |])
+    | None -> (wait_for_init ~clock:env#clock, [| ssh; host; tunnel_path |])
     | Some password ->
-        let prompt proc =
-          let%lwt () = Lwt_unix.sleep 0.5 (* TODO: Wait for prompt rather than sleeping. *) in
-          let%lwt () = Lwt_io.write_line proc.stdin password in
-          wait_for_init proc
+        let prompt ~input ~output =
+          (* TODO: Wait for prompt rather than sleeping. *)
+          Eio.Time.sleep env#clock 0.5;
+          Eio.Buf_write.string output password;
+          Eio.Buf_write.char output '\n';
+          wait_for_init ~clock:env#clock ~input ~output
         in
         (prompt, [| ssh; host; "sudo"; "-S"; "-p"; "sudo[scrutiny-infra-tunnel]: "; tunnel_path |])
   in
-  executor_of_cmd ~switch setup cmd
+  executor_of_cmd ~sw setup cmd
 
 let run_tunnel ~env () : unit =
-  Lwt_eio.run_lwt @@ fun () ->
-  Lwt_switch.with_switch @@ fun switch ->
-  let pending_actions = ITbl.create 32 in
-  let keys = PTbl.create 32 in
-
-  let run_as_user = make_executor_factory ~switch () in
-
-  let send msg =
-    let result = yojson_of_to_client msg |> Yojson.Safe.to_string in
-    Lwt_io.atomic (fun out -> Lwt_io.write_line out result) Lwt_io.stdout
-  in
-  let check_resource id (AppliedResource.Boxed { resource; key; value; options; user }) =
-    let%lwt result =
-      match%lwt run_as_user ~env user with
-      | Error msg -> Lwt.return (Or_exn.Error msg)
-      | Exception msg -> Lwt.return (Or_exn.Exception msg)
-      | Ok executor ->
-          Lwt_eio.run_eio @@ fun () -> executor.apply ~user:`Current resource key value options
-    in
-    let result =
-      result
-      |> Or_exn.map @@ function
-         | Executor.ENeedsChange { diff; apply } ->
-             ITbl.replace pending_actions id apply;
-             `NeedsChange diff
-         | Executor.ECorrect -> `Correct
-    in
-    CheckResult { id; result } |> send
-  in
-
-  let apply_resource id apply =
-    let%lwt result = Lwt_eio.run_eio @@ fun () -> apply () in
-    ApplyResult { id; result } |> send
-  in
-
-  let handle_message = function
-    | Check { id; resource } ->
-        if ITbl.mem pending_actions id then failwith "Duplicate resource";
-        Lwt.async (fun () -> check_resource id resource)
-    | Apply { id } -> (
-      match ITbl.find_opt pending_actions id with
-      | None -> failwith "No such resource"
-      | Some action -> Lwt.async (fun () -> apply_resource id action))
-  in
-  let rec run () =
-    match%lwt Lwt_io.read_line Lwt_io.stdin with
-    | input ->
-        Yojson.Safe.from_string input |> to_server_of_yojson |> handle_message;
-        run ()
-    | exception End_of_file -> Lwt.return_unit
-  in
-
   (if Option.is_none (Sys.getenv_opt "XDG_RUNTIME_DIR") then
    let id = Unix.getuid () in
    if id <> 0 then Unix.putenv "XDG_RUNTIME_DIR" (Printf.sprintf "/run/user/%d" id));
 
-  (* We print an "init" message which contains the version information. *)
-  let%lwt () =
-    Init
-      { message = "Running scrutiny-infra-tunnel, waiting for a command."; version = "%VERSION%" }
-    |> send
+  Switch.run @@ fun sw ->
+  let next_action = ref 0 in
+  let pending_actions = ITbl.create 32 in
+  let run_as_user = make_executor_factory ~env ~sw () in
+
+  let check_resource (AppliedResource.Boxed { resource; key; value; options; user }) : check_result
+      =
+    let result =
+      match run_as_user user with
+      | (Error _ | Exception _) as e -> e
+      | Ok executor -> executor.apply ~user:`Current resource key value options
+    in
+    match result with
+    | (Error _ | Exception _) as e -> e
+    | Ok Executor.ECorrect -> Ok `Correct
+    | Ok (Executor.ENeedsChange { diff; apply }) ->
+        let action_id = !next_action in
+        next_action := action_id + 1;
+        ITbl.replace pending_actions action_id apply;
+        Ok (`NeedsChange (action_id, diff))
+  in
+
+  let apply_resource id =
+    match ITbl.find_opt pending_actions id with
+    | None -> failwith "No such resource"
+    | Some action -> action ()
+  in
+
+  let rpc =
+    Scrutiny_rpc.create ~sw
+      [
+        Scrutiny_rpc.Method.handle Signatures.check_resource check_resource;
+        Scrutiny_rpc.Method.handle Signatures.apply_resource apply_resource;
+      ]
+      (Eio.Buf_read.of_flow ~max_size:(1024 * 1024) env#stdin)
+      env#stdout
   in
 
   (* Set up our forwarding log reporter. *)
-  Logging.reporter keys (fun msg -> Lwt.async (fun () -> Log msg |> send))
-  |> Executors.wrap_logger |> Logs.set_reporter;
+  Scrutiny_rpc.log_forwarder rpc |> Logs.set_reporter;
 
-  run ()
+  (* We send an "init" message which contains the version information. *)
+  Eio.Flow.copy_string (magic_prefix ^ our_version ^ "\n") env#stdout;
+
+  Scrutiny_rpc.await_closed rpc

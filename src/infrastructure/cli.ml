@@ -1,7 +1,7 @@
 open Eio.Std
 include Core
 include Types
-module PTbl = Hashtbl.Make (Executors.PartialKey)
+module KeyTbl = Hashtbl.Make (Core.Concrete_key.Boxed)
 
 module ProgressHelpers = struct
   open Progress.Line
@@ -81,7 +81,6 @@ module ProgressHelpers = struct
 end
 
 type active_key = {
-  key : Concrete_key.boxed;
   clock : Mtime_clock.counter;
   mutable log_dirty : bool;
   mutable log : string;
@@ -105,10 +104,10 @@ module LogsHelpers = struct
       in
 
       msgf @@ fun ?header:_ ?(tags = Logs.Tag.empty) fmt ->
-      match Logs.Tag.find Executors.PartialKey.tag tags with
+      match Logs.Tag.find Runner.Log_tag.tag tags with
       | None -> Format.ikfprintf k str_format fmt
       | Some key -> (
-        match PTbl.find_opt active_keys key with
+        match KeyTbl.find_opt active_keys key with
         | None -> Format.ikfprintf k str_format fmt
         | Some key -> Format.kfprintf (emit key) str_format fmt)
     in
@@ -134,9 +133,7 @@ module LogsHelpers = struct
     let pp_key out key =
       match key with
       | None -> ()
-      | Some (Executors.PartialKey.PKey (resource, key)) ->
-          let module R = (val resource) in
-          Fmt.pf out "%a » " R.pp key
+      | Some (Concrete_key.BKey key) -> Fmt.pf out "%a » " Concrete_key.pp key
     in
 
     let formatter = Format.err_formatter in
@@ -147,7 +144,7 @@ module LogsHelpers = struct
     let report src level ~over k msgf =
       let k _ = over (); k () in
       msgf @@ fun ?header ?(tags = Logs.Tag.empty) fmt ->
-      let key = Logs.Tag.find Executors.PartialKey.tag tags in
+      let key = Logs.Tag.find Runner.Log_tag.tag tags in
       Format.kfprintf k Format.err_formatter
         ("%a@[%a" ^^ fmt ^^ "@]@.")
         pp_header (level, header, src) pp_key key
@@ -167,11 +164,6 @@ let progress_tracker ~sw ~clock ~active_keys ~total =
   let progress_display =
     ProgressHelpers.progress_line ~total |> Progress.Multi.line |> Progress.Display.start
   in
-  let pkey (Concrete_key.BKey key) =
-    match key with
-    | Resource { resource; key; _ } -> Some (Executors.PartialKey.PKey (resource, key))
-    | Var _ | Machine _ -> None
-  in
 
   (* Unconditionally set the line. *)
   let set_line line message =
@@ -190,17 +182,15 @@ let progress_tracker ~sw ~clock ~active_keys ~total =
   in
 
   let key_start key =
-    Fun.flip Option.iter (pkey key) @@ fun pkey ->
-    PTbl.replace active_keys pkey
-      { key; clock = Mtime_clock.counter (); line = None; log_dirty = false; log = "" }
+    KeyTbl.replace active_keys key
+      { clock = Mtime_clock.counter (); line = None; log_dirty = false; log = "" }
   in
   let key_done key =
-    Fun.flip Option.iter (pkey key) @@ fun pkey ->
-    (match PTbl.find_opt active_keys pkey with
+    (match KeyTbl.find_opt active_keys key with
     | Some ({ line = Some line; _ } as status) ->
         update_line status; Progress.Reporter.finalise line
     | _ -> ());
-    PTbl.remove active_keys pkey;
+    KeyTbl.remove active_keys key;
 
     let [ reporter ] = Progress.Display.reporters progress_display in
     reporter 1
@@ -209,14 +199,14 @@ let progress_tracker ~sw ~clock ~active_keys ~total =
 
   (* Tick the progress bar. *)
   let rec tick_progress () =
-    PTbl.iter
-      (fun _ status ->
+    KeyTbl.iter
+      (fun key status ->
         let elapsed = Mtime_clock.count status.clock in
         (match status.line with
         | None when Mtime.Span.to_s elapsed > 1.0 ->
             let line =
               Progress.Display.add_line ~above:1 progress_display
-                (ProgressHelpers.key_line status.key status.clock)
+                (ProgressHelpers.key_line key status.clock)
             in
             set_line line status.log;
             status.line <- Some line;
@@ -278,11 +268,11 @@ let main rules_def =
 
     Eio_main.run @@ fun env ->
     Lwt_eio.with_event_loop ~clock:env#clock @@ fun _token ->
-    let active_keys = PTbl.create 16 in
+    let active_keys = KeyTbl.create 16 in
 
     (* Set up log handlers. We do this inside eio so that the effect handlers are installed. *)
     LogsHelpers.(combine_reporters (capturing_reporter active_keys) (logs_reporter (level = Debug)))
-    |> Executors.wrap_logger |> Progress.instrument_logs_reporter |> Logs.set_reporter;
+    |> Runner.Log_tag.wrap |> Progress.instrument_logs_reporter |> Logs.set_reporter;
 
     (* Evaluate rules. *)
     let rules = Builder_map.create 16 in

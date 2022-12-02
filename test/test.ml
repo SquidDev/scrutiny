@@ -27,6 +27,13 @@ let logs_reporter =
 
 let () =
   Logs.set_level ~all:true (Some Debug);
+  List.iter
+    (fun src ->
+      match Logs.Src.name src with
+      | "eio_linux" -> Logs.Src.set_level src None
+      | _ -> ())
+    (Logs.Src.list ());
+
   Logs.set_reporter logs_reporter;
   Random.self_init ();
 
