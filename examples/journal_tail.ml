@@ -3,7 +3,9 @@
 module Journal = Scrutiny_systemd.Journal
 
 let () =
-  let journal = Journal.open_ () in
+  Eio_main.run @@ fun _env ->
+  Eio.Switch.run @@ fun sw ->
+  let journal = Journal.open_ ~sw () in
   Journal.seek_tail journal;
   while true do
     if Journal.next journal then

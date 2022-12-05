@@ -267,7 +267,6 @@ let main rules_def =
     setup_logs ~extra_level level;
 
     Eio_main.run @@ fun env ->
-    Lwt_eio.with_event_loop ~clock:env#clock @@ fun _token ->
     let active_keys = KeyTbl.create 16 in
 
     (* Set up log handlers. We do this inside eio so that the effect handlers are installed. *)

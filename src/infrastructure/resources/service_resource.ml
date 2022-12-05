@@ -1,3 +1,4 @@
+open Eio.Std
 module Infra = Scrutiny_infrastructure
 module Journal = Scrutiny_systemd.Journal
 module Systemd = Scrutiny_systemd.Manager
@@ -5,14 +6,9 @@ module Log = (val Logs.src_log (Logs.Src.create __MODULE__) : Logs.LOG)
 
 let unit_fields = [ "USER_UNIT"; "UNIT"; "_SYSTEMD_USER_UNIT"; "_SYSTEMD_UNIT" ]
 
-let watch_journal ~switch ~unit_name =
-  Lwt_switch.check switch;
-
-  let journal = Journal.open_ () in
+let watch_journal ~sw ~unit_name =
+  let journal = Journal.open_ ~sw () in
   Journal.seek_tail journal;
-
-  let wait, signal = Lwt.wait () in
-  Lwt_switch.add_hook switch (fun () -> Lwt.wakeup signal Journal.Nop; Lwt.return_unit);
 
   let rec this_unit = function
     | [] -> false
@@ -34,12 +30,10 @@ let watch_journal ~switch ~unit_name =
       read_journal ())
   in
   let rec watch_journal () =
-    if Option.fold ~none:true ~some:Lwt_switch.is_on switch then (
-      let%lwt _ = Lwt.choose [ Journal.wait journal; wait ] in
-      read_journal (); watch_journal ())
-    else (Journal.close journal; Lwt.return_unit)
+    let _ = Journal.wait journal in
+    read_journal (); watch_journal ()
   in
-  Lwt.async watch_journal
+  Fiber.fork_daemon ~sw watch_journal
 
 module ServiceName = struct
   type t = {
@@ -97,24 +91,6 @@ module ServiceChange = struct
     | (`None | `Reload), `Reload | `Reload, `None -> `Reload
 end
 
-(** Store the bus in a global state. It's not nice, but the only thing we can really do. *)
-let get_bus : [ `System | `User ] -> Systemd.t =
-  let sw = Lwt_switch.create () in
-  let user_bus = ref None in
-  let system_bus = ref None in
-
-  let get_bus ref kind =
-    match !ref with
-    | Some x -> x
-    | None ->
-        let manager = Systemd.of_bus ~sw kind in
-        ref := Some manager;
-        manager
-  in
-  function
-  | `User -> get_bus user_bus `User
-  | `System -> get_bus system_bus `System
-
 module Service = struct
   module Key = ServiceName
   module Value = ServiceState
@@ -139,36 +115,42 @@ module Service = struct
     if target.enabled then ("enabled", Systemd.Unit.enable) else ("disabled", Systemd.Unit.disable)
 
   (** Monitor a unit, ensuring it remains running for some period. *)
-  let monitor_unit name unit_file target =
-    if target.monitor <= 0 then Lwt.return_ok ()
+  let monitor_unit ~clock name unit_file target =
+    if target.monitor <= 0 then Ok ()
     else (
       (* Monitor this service for some number of seconds, then check it's still in the correct
          state. *)
       Log.info (fun f -> f "Watching %s for %d seconds" name target.monitor);
-      let%lwt () = Lwt_unix.sleep (float_of_int target.monitor) in
-      let%lwt current_state = Systemd.Unit.get_active_state unit_file in
+      Eio.Time.sleep clock (float_of_int target.monitor);
+      let current_state = Systemd.Unit.get_active_state unit_file in
       let target_state = if target.running then "active" else "inactive" in
       if current_state = target_state then (
         Log.info (fun f -> f "Service is still %s" current_state);
-        Lwt.return_ok ())
+        Ok ())
       else
         Printf.sprintf "Expecting service to be %s but is %s" target_state current_state
-        |> Lwt.return_error)
+        |> Result.error)
 
-  let apply ~env:_ { ServiceName.name; scope } target change : (Infra.change, string) result =
-    Lwt_eio.run_lwt @@ fun () ->
+  let apply ~env { ServiceName.name; scope } target change : (Infra.change, string) result =
     match get_desired_state change target with
-    | Error e -> Lwt.return_error e
+    | Error e -> Error e
     | Ok (target_state, target_state_apply) ->
         let target_unit_state, target_unit_state_apply = get_desired_unit_state target in
 
-        let systemd = get_bus scope in
-        let%lwt unit_file = Systemd.load_unit systemd name in
-        let%lwt current_state = Systemd.Unit.get_active_state unit_file
-        and current_unit_state = Systemd.Unit.get_unit_file_state unit_file in
+        let scope =
+          match scope with
+          | `User -> `User
+          | `System -> `System
+        in
+        let current_state, current_unit_state =
+          Switch.run @@ fun sw ->
+          let systemd = Systemd.of_bus ~sw scope in
+          let unit_file = Systemd.load_unit systemd name in
+          (Systemd.Unit.get_active_state unit_file, Systemd.Unit.get_unit_file_state unit_file)
+        in
 
         if current_state = target_state && current_unit_state = target_unit_state then
-          Lwt.return_ok Infra.Correct
+          Ok Infra.Correct
         else
           let diff =
             let open Scrutiny_diff in
@@ -182,28 +164,24 @@ module Service = struct
           (* TODO: Refactor this somewhere which isn't /quite/ so ugly? There's a lot of captured
              state though, which makes this a little more awkward. *)
           let apply () =
-            Lwt_eio.run_lwt @@ fun () ->
-            Lwt_switch.with_switch @@ fun sw ->
-            watch_journal ~switch:(Some sw) ~unit_name:name;
+            Switch.run @@ fun sw ->
+            watch_journal ~sw ~unit_name:name;
 
-            let%lwt () = Systemd.daemon_reload systemd in
-            let%lwt apply_state =
-              if current_state <> target_state then target_state_apply unit_file
-              else Lwt.return_ok ()
+            let systemd = Systemd.of_bus ~sw scope in
+            Systemd.daemon_reload systemd;
+            let unit_file = Systemd.load_unit systemd name in
+            let apply_state =
+              if current_state <> target_state then target_state_apply unit_file else Ok ()
             in
             match apply_state with
-            | Error e ->
-                Lwt.return_error (Printf.sprintf "Failed to %s service (%s)" target_state e)
+            | Error e -> Error (Printf.sprintf "Failed to %s service (%s)" target_state e)
             | Ok () ->
-                let%lwt () =
-                  if current_unit_state <> target_unit_state then target_unit_state_apply unit_file
-                  else Lwt.return_unit
-                in
+                if current_unit_state <> target_unit_state then target_unit_state_apply unit_file;
                 if target.running && current_state <> target_state then
-                  monitor_unit name unit_file target
-                else Lwt.return_ok ()
+                  monitor_unit ~clock:env#clock name unit_file target
+                else Ok ()
           in
-          Lwt.return_ok (Infra.NeedsChange { diff; apply })
+          Ok (Infra.NeedsChange { diff; apply })
 end
 
 let service_resource =

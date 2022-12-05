@@ -2,26 +2,21 @@
  (name test)
  (libraries
   alcotest
-  alcotest-lwt
   containers
   eio
   eio_main
   eio.core
   eio.unix
+  eio_process
   fmt
   fpath
   logs
   logs.fmt
-  lwt
-  lwt_eio
-  lwt.unix
   scrutiny.infrastructure
   scrutiny.infrastructure.resources
   unix)
  (modules
   (:standard \ mdx_support))
- (preprocess
-  (pps lwt_ppx))
  (deps
   ../src/infrastructure/bin/tunnel.exe
   support/Dockerfile

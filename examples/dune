@@ -8,16 +8,13 @@
   fmt.tty
   logs
   logs.fmt
-  lwt
-  lwt_eio
-  lwt.unix
   scrutiny.diff
   scrutiny.dns))
 
 (executable
  (name journal_tail)
  (modules journal_tail)
- (libraries scrutiny.systemd))
+ (libraries eio eio.core eio_main scrutiny.systemd unix))
 
 (executable
  (name journal_write)
@@ -27,4 +24,4 @@
 (executable
  (name list_units)
  (modules list_units)
- (libraries containers lwt lwt.unix scrutiny.systemd))
+ (libraries containers eio eio.core eio_main scrutiny.systemd))

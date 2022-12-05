@@ -1,3 +1,4 @@
+open Eio.Std
 module StringMap = Map.Make (String)
 
 type 'a bus_result = private
@@ -68,21 +69,20 @@ end
 module JobRemoval = struct
   type t =
     | UnknownId of string StringMap.t
-    | KnownId of string * string Lwt.u
+    | KnownId of string * string Promise.u
 
   let notify ({ job; result; _ } : job_removed) listener =
     match !listener with
     | UnknownId ids -> listener := UnknownId (StringMap.add job result ids)
-    | KnownId (job', callback) -> if job = job' then Lwt.wakeup_later callback result
+    | KnownId (job', callback) -> if job = job' then Promise.resolve callback result
 
   let notify_all listeners job = Lwt_dllist.iter_l (fun l -> notify job l) listeners
 end
 
-let call_native invoke cb =
-  let promise, resolve = Lwt.wait () in
-  invoke (fun units -> Lwt.wakeup_later resolve units);
-  let open Lwt.Infix in
-  promise >|= function
+let call_native ~label invoke cb =
+  let promise, resolve = Promise.create ~label () in
+  invoke (fun units -> Promise.resolve resolve units);
+  match Promise.await promise with
   | Bus_error (msg, descr) -> failwith (Printf.sprintf "%s: %s" msg descr)
   | Parse_error (x, y) -> raise (Unix.Unix_error (x, "call_native", y))
   | Ok x -> cb x
@@ -90,8 +90,9 @@ let call_native invoke cb =
 type t = {
   bus : Native.sd_bus;
   removed_job_listeners : JobRemoval.t ref Lwt_dllist.t;
+  sw : Switch.t;
   mutable is_open : bool;
-  mutable listening : unit Lwt.t option;
+  mutable listening : unit Promise.or_exn option;
 }
 
 let close x =
@@ -100,19 +101,12 @@ let close x =
   Native.scrutiny_sd_bus_close x.bus
 
 let process x =
-  let ofd = Native.scrutiny_sd_bus_get_fd x.bus in
-  let fd = ofd |> Lwt_unix.of_unix_file_descr ~blocking:false in
+  let fd = Native.scrutiny_sd_bus_get_fd x.bus in
 
   let rec go () =
-    if x.is_open then
-      let open Lwt.Infix in
-      Lwt_unix.wait_read fd >>= fun () ->
-      if x.is_open then (
-        (* TODO: Use get_events to await readable or writable. *)
-        Native.scrutiny_sd_bus_process x.bus;
-        go ())
-      else Lwt.return_unit
-    else Lwt.return_unit
+    Eio_unix.await_readable fd;
+    Native.scrutiny_sd_bus_process x.bus;
+    go ()
   in
   go ()
 
@@ -139,7 +133,7 @@ let get_user_bus user =
     ]
 
 let of_bus ~sw (conn : connection) =
-  Lwt_switch.check (Some sw);
+  Switch.check sw;
   let bus =
     match conn with
     | `User -> Native.scrutiny_sd_bus_open_user ()
@@ -148,15 +142,17 @@ let of_bus ~sw (conn : connection) =
     | `Bus b -> Native.scrutiny_sd_bus_open_address b
   in
   let bus =
-    { bus; is_open = true; removed_job_listeners = Lwt_dllist.create (); listening = None }
+    { bus; is_open = true; removed_job_listeners = Lwt_dllist.create (); listening = None; sw }
   in
-  Lwt.async (fun () -> process bus);
-  (* Cannot wait for eio! *)
-  Lwt_switch.add_hook (Some sw) (fun () -> close bus; Lwt.return_unit);
+  Fiber.fork_daemon ~sw (fun () -> process bus);
+  Switch.on_release sw (fun () -> close bus);
   bus
 
 let get_prop bus ~path ~interface ~name =
-  call_native (Native.scrutiny_sd_bus_get_prop bus.bus path interface name) Fun.id
+  call_native
+    ~label:(Printf.sprintf "GetProp(%s/%s.%s)" path interface name)
+    (Native.scrutiny_sd_bus_get_prop bus.bus path interface name)
+    Fun.id
 
 module Unit = struct
   type nonrec t = {
@@ -167,46 +163,51 @@ module Unit = struct
 
   let interface = "org.freedesktop.systemd1.Unit"
   let id (u : t) = u.id
-  let l_protect ~finally f = Lwt.finalize f (fun () -> finally (); Lwt.return_unit)
 
   (** Sets up a job listener, runs a function which creates a job (for instance restarting a
       service) and then waits for that job to finish, returning the job's result. *)
   let job_action action ({ bus; id; _ } : t) =
-    let%lwt () =
+    let () =
       match bus.listening with
-      | Some subscribe -> subscribe
+      | Some subscribe -> Promise.await_exn subscribe
       | None ->
           Native.scrutiny_sd_bus_subscribe_job_removed bus.bus
             (JobRemoval.notify_all bus.removed_job_listeners);
           let listening =
-            Lwt.protected
-              (call_native (Native.scrutiny_sd_bus_call_noarg bus.bus "Subscribe") Fun.id)
+            Eio.Fiber.fork_promise ~sw:bus.sw @@ fun () ->
+            call_native ~label:"systemd subscribe"
+              (Native.scrutiny_sd_bus_call_noarg bus.bus "Subscribe")
+              Fun.id
           in
           bus.listening <- Some listening;
-          listening
+          Promise.await_exn listening
     in
 
     let cell = ref (JobRemoval.UnknownId StringMap.empty) in
     let node = Lwt_dllist.add_r cell bus.removed_job_listeners in
 
-    l_protect ~finally:(fun () -> Lwt_dllist.remove node) @@ fun () ->
-    let%lwt job = call_native (Native.scrutiny_sd_bus_unit_action bus.bus id action) Fun.id in
-    let%lwt result =
+    Fun.protect ~finally:(fun () -> Lwt_dllist.remove node) @@ fun () ->
+    let job =
+      call_native ~label:("systemd " ^ action)
+        (Native.scrutiny_sd_bus_unit_action bus.bus id action)
+        Fun.id
+    in
+    let result =
       match !cell with
       | KnownId _ -> failwith "Impossible."
       | UnknownId are_done -> (
         match StringMap.find_opt job are_done with
-        | Some result -> Lwt.return result
+        | Some result -> result
         | None ->
-            let wait, signal = Lwt.wait () in
+            let wait, signal = Promise.create ~label:"Job waiter" () in
             cell := KnownId (job, signal);
-            wait)
+            Promise.await wait)
     in
 
     Lwt_dllist.remove node;
     match result with
-    | "done" -> Lwt.return_ok ()
-    | result -> Lwt.return_error result
+    | "done" -> Result.Ok ()
+    | result -> Error result
 
   let start = job_action "StartUnit"
   let stop = job_action "StopUnit"
@@ -214,10 +215,14 @@ module Unit = struct
   let restart = job_action "RestartUnit"
 
   let enable ({ bus; id; _ } : t) =
-    call_native (Native.scrutiny_sd_bus_enable_unit_file bus.bus id) Fun.id
+    call_native ~label:"sd_bus_enable_unit_file"
+      (Native.scrutiny_sd_bus_enable_unit_file bus.bus id)
+      Fun.id
 
   let disable ({ bus; id; _ } : t) =
-    call_native (Native.scrutiny_sd_bus_disable_unit_file bus.bus id) Fun.id
+    call_native ~label:"sd_bus_disable_unit_file"
+      (Native.scrutiny_sd_bus_disable_unit_file bus.bus id)
+      Fun.id
 
   let get_load_state ({ bus; path; _ } : t) = get_prop bus ~interface ~path ~name:"LoadState"
   let get_active_state ({ bus; path; _ } : t) = get_prop bus ~interface ~path ~name:"ActiveState"
@@ -250,7 +255,7 @@ type unit_state = {
 }
 
 let list_units bus =
-  call_native (Native.scrutiny_sd_bus_list_units bus.bus) @@ fun r ->
+  call_native ~label:"list_units" (Native.scrutiny_sd_bus_list_units bus.bus) @@ fun r ->
   List.rev_map
     (fun (x : unit_state_native) : unit_state ->
       {
@@ -265,7 +270,8 @@ let list_units bus =
     r
 
 let load_unit bus unit_name =
-  call_native (Native.scrutiny_sd_bus_load_unit bus.bus unit_name) (fun path ->
+  call_native ~label:"load_unit" (Native.scrutiny_sd_bus_load_unit bus.bus unit_name) (fun path ->
       { Unit.bus; id = unit_name; path })
 
-let daemon_reload bus = call_native (Native.scrutiny_sd_bus_call_noarg bus.bus "Reload") Fun.id
+let daemon_reload bus =
+  call_native ~label:"daemon_reload" (Native.scrutiny_sd_bus_call_noarg bus.bus "Reload") Fun.id

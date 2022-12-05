@@ -7,8 +7,6 @@
   fmt.tty
   logs
   logs.fmt
-  lwt
-  lwt.unix
   scrutiny_infrastructure
   scrutiny_infrastructure_resources_internal
   unix))

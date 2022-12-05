@@ -11,9 +11,6 @@
   fmt
   fpath
   logs
-  lwt
-  lwt_eio
-  lwt.unix
   result
   scrutiny.diff
   scrutiny.infrastructure
@@ -28,7 +25,7 @@
   path_support
   user)
  (preprocess
-  (pps lwt_ppx ppx_yojson_conv)))
+  (pps ppx_yojson_conv)))
 
 (library
  (name scrutiny_infrastructure_resources)
@@ -39,8 +36,6 @@
   fmt
   fpath
   jingoo
-  lwt
-  lwt_eio
   result
   scrutiny.diff
   scrutiny.dns
@@ -48,6 +43,4 @@
   scrutiny.infrastructure.resources_internal
   unix
   yojson)
- (modules dns_resource scrutiny_infrastructure_resources)
- (preprocess
-  (pps lwt_ppx)))
+ (modules dns_resource scrutiny_infrastructure_resources))

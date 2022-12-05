@@ -2,10 +2,8 @@
  (name scrutiny_systemd)
  (public_name scrutiny.systemd)
  (synopsis "Utilities for interacting with systemd and journald.")
- (libraries lwt lwt.unix lwt-dllist result)
+ (libraries lwt-dllist eio eio.core eio.unix unix)
  (foreign_stubs
   (language c)
   (names systemd_stubs))
- (c_library_flags -lsystemd)
- (preprocess
-  (pps lwt_ppx)))
+ (c_library_flags -lsystemd))

@@ -1,6 +1,5 @@
 (** A terrible cgroups implementation. *)
 
-open Lwt.Infix
 module Log = (val Logs.src_log (Logs.Src.create "scrutiny.cgroups"))
 
 type kind =
@@ -24,17 +23,12 @@ let get_path ~subsystem ~stat group t =
   | Unified -> Fpath.(t.path / subsystem // group / stat)
   | V2 -> Fpath.(t.path // group / stat)
 
-let use ~subsystem ~stat cgroup t f =
+let use ~fs ~subsystem ~stat cgroup t f =
   let path = get_path ~subsystem ~stat cgroup t in
-  Lwt.catch
-    (fun () ->
-      Lwt_io.with_file ~mode:Input (Fpath.to_string path) @@ fun channel ->
-      Lwt_io.read channel >|= f)
-    (function
-      | Unix.Unix_error (Unix.ENOENT, _, _) ->
-          Log.warn (fun f -> f "Cannot find stat %s for cgroup %a" stat Fpath.pp cgroup);
-          Lwt.return_none
-      | e -> Lwt.fail e)
+  try Eio.Path.(fs / Fpath.to_string path) |> Eio.Path.load |> f
+  with Unix.Unix_error (Unix.ENOENT, _, _) ->
+    Log.warn (fun f -> f "Cannot find stat %s for cgroup %a" stat Fpath.pp cgroup);
+    None
 
 (** [prefix_at ~start ~pre str]: Does [str] contain the string [pre] at position [start]?
     Effectively {!CCString.prefix} with an offset. *)
@@ -66,29 +60,29 @@ let find_field ~field contents =
   in
   go 0
 
-let get_memory_current cgroup t =
+let get_memory_current ~fs cgroup t =
   let stat =
     match t.kind with
     | Unified -> "memory.usage_in_bytes"
     | V2 -> "memory.current"
   in
-  use ~subsystem:"memory" ~stat cgroup t @@ fun x ->
+  use ~fs ~subsystem:"memory" ~stat cgroup t @@ fun x ->
   match String.trim x |> int_of_string_opt with
   | None ->
       Log.warn (fun f -> f "Error parsing memory usage for %a (contents is %S)" Fpath.pp cgroup x);
       None
   | Some _ as x -> x
 
-let get_memory_anon cgroup t =
-  use ~subsystem:"unified" ~stat:"memory.stat" cgroup t @@ fun x ->
+let get_memory_anon ~fs cgroup t =
+  use ~fs ~subsystem:"unified" ~stat:"memory.stat" cgroup t @@ fun x ->
   match find_field ~field:"anon" x |> CCOption.flat_map int_of_string_opt with
   | None ->
       Log.warn (fun f -> f "Error parsing memory usage for %a (contents is %S)" Fpath.pp cgroup x);
       None
   | Some _ as x -> x
 
-let get_cpu cgroup t =
-  use ~subsystem:"unified" ~stat:"cpu.stat" cgroup t @@ fun x ->
+let get_cpu ~fs cgroup t =
+  use ~fs ~subsystem:"unified" ~stat:"cpu.stat" cgroup t @@ fun x ->
   match find_field ~field:"usage_usec" x |> CCOption.flat_map int_of_string_opt with
   | None ->
       Log.warn (fun f -> f "Error parsing cpu usage for %a (contents is %S)" Fpath.pp cgroup x);

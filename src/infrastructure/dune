@@ -12,7 +12,6 @@
   fmt
   fpath
   logs
-  lwt_eio
   ppx_yojson_conv_lib
   result
   scrutiny.diff
@@ -27,4 +26,4 @@
   progress
   terminal)
  (preprocess
-  (pps lwt_ppx ppx_yojson_conv)))
+  (pps ppx_yojson_conv)))

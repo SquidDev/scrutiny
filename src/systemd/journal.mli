@@ -19,17 +19,12 @@ type level =
   | Debug  (** LOG_DEBUG *)
 
 (** Open the current journal, defaulting to the local one. *)
-val open_ : ?sw:Lwt_switch.t -> ?flags:flags list -> unit -> t
-
-(** Close a journal.
-
-    You typically will not need to do this, as the switch will handle it automatically. *)
-val close : t -> unit
+val open_ : sw:Eio.Std.Switch.t -> ?flags:flags list -> unit -> t
 
 (** Wait for a new journal event.
 
     {b Note:} if the journal is closed while we're waiting here, the promise may not complete. *)
-val wait : t -> journal_change Lwt.t
+val wait : t -> journal_change
 
 (** Read the next journal event, returning false when reaching the end of the DB *)
 val next : t -> bool

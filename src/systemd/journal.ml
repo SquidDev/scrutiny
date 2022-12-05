@@ -1,3 +1,5 @@
+open Eio.Std
+
 module Native = struct
   type sd_journal
 
@@ -20,8 +22,7 @@ end
 
 type t = {
   journal : Native.sd_journal;
-  mutable is_open : bool;
-  mutable fd : Lwt_unix.file_descr option;
+  mutable fd : Unix.file_descr option;
 }
 
 type flags = LocalOnly
@@ -29,19 +30,12 @@ type flags = LocalOnly
 let int_of_flag = function
   | LocalOnly -> 1 lsl 0
 
-let close x =
-  if not x.is_open then failwith "close: Already closed";
-  x.is_open <- false;
-  x.fd <- None;
-  Native.sd_journal_close x.journal
-
-let open_ ?sw ?(flags = [ LocalOnly ]) () =
-  Lwt_switch.check sw;
+let open_ ~sw ?(flags = [ LocalOnly ]) () =
+  Switch.check sw;
   let flags = List.fold_left (fun x y -> x lor int_of_flag y) 0 flags in
   let journal = Native.sd_journal_open flags in
-  let journal = { journal; is_open = true; fd = None } in
-  Lwt_switch.add_hook sw (fun () -> close journal; Lwt.return_unit);
-  journal
+  Switch.on_release sw (fun () -> Native.sd_journal_close journal);
+  { journal; fd = None }
 
 type journal_change =
   | Nop
@@ -70,14 +64,12 @@ let wait journal =
     match journal.fd with
     | Some fd -> fd
     | None ->
-        let fd =
-          Native.sd_journal_get_fd journal.journal |> Lwt_unix.of_unix_file_descr ~blocking:false
-        in
+        let fd = Native.sd_journal_get_fd journal.journal in
         journal.fd <- Some fd;
         fd
   in
-  let open Lwt.Infix in
-  Lwt_unix.wait_read fd >|= fun () -> Native.sd_journal_process journal.journal |> convert_wait
+  Eio_unix.await_readable fd;
+  Native.sd_journal_process journal.journal |> convert_wait
 
 let next { journal; _ } = Native.sd_journal_next journal
 let seek_tail { journal; _ } = Native.sd_journal_seek_tail journal

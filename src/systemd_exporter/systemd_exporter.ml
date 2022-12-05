@@ -1,63 +1,44 @@
 (** A Prometheus exporter for SystemD services. *)
 
-open Lwt.Syntax
-open Httpaf
-open Httpaf_lwt_unix
+open Cohttp_eio
 module Log = (val Logs.src_log (Logs.Src.create "systemd_exporter"))
 
-let respond_error reqd status reason =
-  let headers = Headers.of_list [ ("connection", "close") ] in
-  Reqd.respond_with_string reqd (Response.create ~headers status) reason
+let handle_prometheus snapshot =
+  let response =
+    Http.Response.make ~status:`OK
+      ~headers:(Http.Header.of_list [ ("content-type", "text/plain; version=0.0.4") ])
+      ()
+  in
+  let body = Format.asprintf "%a" Scrutiny_prometheus.TextFormat_0_0_4.output snapshot in
 
-let request_handler config (_ : Unix.sockaddr) reqd =
-  let request = Reqd.request reqd in
-  match request with
-  | { target = "/metrics"; _ } ->
-      Lwt.async @@ fun () ->
-      Lwt.try_bind
-        (fun () -> Metrics.collect config)
-        (fun () ->
-          Scrutiny_prometheus_httpaf.handle_default reqd request;
-          Lwt.return_unit)
-        (fun exn ->
+  (response, Body.Fixed body)
+
+let app ~fs ~config (req, _reader, _client_addr) =
+  match (Http.Request.resource req, Http.Request.meth req) with
+  | "/metrics", `GET -> (
+      let metrics =
+        try Some (Metrics.collect ~fs config)
+        with exn ->
           let bt = Printexc.get_raw_backtrace () in
           Log.err (fun f -> f "Error gathering metrics: %a" Fmt.exn_backtrace (exn, bt));
-          respond_error reqd `Internal_server_error "Internal Server Error";
-          Lwt.return_unit)
-  | _ -> respond_error reqd `Not_found "Not Found"
-
-let error_handler (_ : Unix.sockaddr) ?request:_ error start_response =
-  let response_body = start_response Headers.empty in
-  (match error with
-  | `Exn exn ->
-      Log.err (fun f -> f "Error handling request: %a" Fmt.exn exn);
-      Body.write_string response_body "Internal error"
-  | #Status.standard as error ->
-      Body.write_string response_body (Status.default_reason_phrase error));
-  Body.close_writer response_body
+          None
+      in
+      match metrics with
+      | Some () -> Prometheus.CollectorRegistry.(collect default) |> handle_prometheus
+      | None -> Server.internal_server_error_response)
+  | "/metrics", _ -> (Http.Response.make ~status:`Method_not_allowed (), Body.Empty)
+  | _ -> Server.not_found_response
 
 let main ~busses ~cgroup ~addr ~port =
-  let catching ~tag f =
-    Lwt.catch f (fun e ->
-        let bt = Printexc.get_raw_backtrace () in
-        Log.err (fun f -> f "Error in %s: %a" tag Fmt.exn_backtrace (e, bt));
-        Printexc.raise_with_backtrace e bt)
-  in
-  let listen_address = Unix.(ADDR_INET (inet_addr_of_string addr, port)) in
+  Eio_main.run @@ fun env ->
   let config =
     {
       Metrics.busses;
       cgroups = Fpath.v cgroup |> Cgroups.get |> Result.fold ~ok:Fun.id ~error:failwith;
     }
   in
-  let* _server =
-    catching ~tag:"Server" @@ fun () ->
-    Lwt_io.establish_server_with_client_socket listen_address
-      (Server.create_connection_handler ~request_handler:(request_handler config) ~error_handler)
-  in
   Log.info (fun f -> f "Listening on %s:%d" addr port);
-  let forever, _ = Lwt.wait () in
-  forever
+  Server.run ~port env (app ~fs:env#fs ~config)
 
 let () =
   let term =
@@ -104,7 +85,7 @@ let () =
       Logs.Src.list ()
       |> List.iter (fun src ->
              if Logs.Src.name src = "scrutiny.cgroups" then Logs.Src.set_level src (Some Logs.Error));
-    Lwt_main.run (main ~busses ~cgroup ~addr ~port)
+    main ~busses ~cgroup ~addr ~port
   in
 
   let open Cmdliner in

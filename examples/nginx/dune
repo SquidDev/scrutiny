@@ -6,7 +6,5 @@
   fpath
   logs
   logs.fmt
-  lwt
-  lwt.unix
   scrutiny.infrastructure
   scrutiny.infrastructure.resources))

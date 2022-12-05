@@ -1,5 +1,3 @@
-open Import
-
 let logs_reporter =
   let pp_header out style h src =
     let time = Unix.time () |> Unix.gmtime in
@@ -37,7 +35,4 @@ let () =
   Logs.set_reporter logs_reporter;
   Random.self_init ();
 
-  Eio_main.run @@ fun env ->
-  Eio.Fiber.with_binding current_env env @@ fun () ->
-  Lwt_eio.with_event_loop ~clock:env#clock @@ fun _token ->
-  Lwt_eio.run_lwt @@ fun () -> Alcotest_lwt.run "Scrutiny" [ T_scrutiny_infrastructure.tests ]
+  Eio_main.run @@ fun env -> Alcotest.run "Scrutiny" [ T_scrutiny_infrastructure.tests ~env ]

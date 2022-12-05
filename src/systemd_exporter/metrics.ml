@@ -1,4 +1,4 @@
-open Lwt.Syntax
+open Eio.Std
 module SMap = Map.Make (String)
 module Manager = Scrutiny_systemd.Manager
 
@@ -128,35 +128,34 @@ type t = {
   cgroups : Cgroups.t;
 }
 
-let collect t =
+let collect ~fs t =
   SMap.iter (fun _ x -> x.active <- false) !units;
 
   (* For all busses and all units. *)
-  Lwt_switch.with_switch @@ fun sw ->
-  Fun.flip Lwt_list.iter_p t.busses @@ fun bus ->
-  let* units = Manager.of_bus ~sw bus |> Manager.list_units in
-  Fun.flip Lwt_list.iter_p units @@ fun unit_info ->
-  if not (CCString.suffix ~suf:".service" unit_info.id) then Lwt.return_unit
+  Switch.run @@ fun sw ->
+  Fun.flip Fiber.List.iter t.busses @@ fun bus ->
+  let units = Manager.of_bus ~sw bus |> Manager.list_units in
+  Fun.flip Fiber.List.iter units @@ fun unit_info ->
+  if not (String.ends_with ~suffix:".service" unit_info.id) then ()
   else
     let unit_state = get_unit unit_info.id in
     unit_state.active <- true;
     unit_state.state <- State.v unit_info.active_state;
 
-    let* cgroup = Manager.Service.of_unit unit_info.unit |> Manager.Service.get_control_group in
+    let cgroup = Manager.Service.of_unit unit_info.unit |> Manager.Service.get_control_group in
     if cgroup <> "" then (
       let cgroup =
         if String.length cgroup > 0 && cgroup.[0] = '/' then CCString.drop 1 cgroup else cgroup
       in
       let cgroup = Fpath.v cgroup in
-      let* memory_current = Cgroups.get_memory_current cgroup t.cgroups
-      and* memory_anon = Cgroups.get_memory_anon cgroup t.cgroups
-      and* cpu = Cgroups.get_cpu cgroup t.cgroups in
+      let memory_current = Cgroups.get_memory_current ~fs cgroup t.cgroups in
+      let memory_anon = Cgroups.get_memory_anon ~fs cgroup t.cgroups in
+      let cpu = Cgroups.get_cpu cgroup ~fs t.cgroups in
+
       unit_state.memory_current <- Option.map float_of_int memory_current;
       unit_state.memory_anon <- Option.map float_of_int memory_anon;
-      unit_state.cpu <- Option.map (fun x -> float_of_int x) cpu;
-      Lwt.return_unit)
+      unit_state.cpu <- Option.map (fun x -> float_of_int x) cpu)
     else (
       unit_state.memory_current <- None;
       unit_state.memory_anon <- None;
-      unit_state.cpu <- None;
-      Lwt.return_unit)
+      unit_state.cpu <- None)

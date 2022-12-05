@@ -25,18 +25,16 @@
     base-threads
     base-unix
     cmdliner
+    (cohttp (>= 6.0))
+    (cohttp-eio (>= 6.0))
     (containers (>= 3.6))
     digestif
     eio
     eio_main
     fmt
     fpath
-    httpaf-lwt-unix
     jingoo
     logs
-    lwt
-    lwt_eio
-    lwt_ppx
     lwt-dllist
     ocurl
     ppx_yojson_conv
@@ -51,5 +49,4 @@
     ; Test
     (mdx :with-test)
     (alcotest :with-test)
-    (alcotest-lwt :with-test)
     ))

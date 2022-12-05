@@ -5,4 +5,4 @@ type t = {
 }
 
 (** Get the current units's state and update the metrics counter. *)
-val collect : t -> unit Lwt.t
+val collect : fs:Eio.Fs.dir Eio.Path.t -> t -> unit

@@ -7,10 +7,12 @@
   fmt
   fpath
   logs
-  lwt
-  lwt.unix
-  httpaf
-  httpaf-lwt-unix
+  eio
+  eio.core
+  eio_main
+  cohttp
+  cohttp-eio
   prometheus
-  scrutiny.prometheus.httpaf
-  scrutiny.systemd))
+  scrutiny.prometheus
+  scrutiny.systemd
+  unix))
