@@ -24,7 +24,6 @@ We can make a simple http request.
   Eio.Switch.run @@ fun sw ->
   let client = Curl_eio.create ~sw ~clock:env#clock ~net:env#net in
   get ~client "https://httpbin.org/base64/SGVsbG8sIHdvcmxkIQ==" ;;
-mdx_gen.bc: [INFO] Selecting io-uring backend
 mdx_gen.bc: [DEBUG] Starting request to https://httpbin.org/base64/SGVsbG8sIHdvcmxkIQ==
 mdx_gen.bc: [DEBUG] Finished request to https://httpbin.org/base64/SGVsbG8sIHdvcmxkIQ==
 - : (int * string, string) result = Ok (200, "Hello, world!")
@@ -42,7 +41,6 @@ We can make HTTP requests in parallel.
     (fun () -> get ~client "https://httpbin.org/delay/3")
   |> ignore;
   assert (Eio.Time.now env#clock -. start < 6.) ;;
-mdx_gen.bc: [INFO] Selecting io-uring backend
 mdx_gen.bc: [DEBUG] Starting request to https://httpbin.org/delay/3
 mdx_gen.bc: [DEBUG] Starting request to https://httpbin.org/delay/3
 mdx_gen.bc: [DEBUG] Finished request to https://httpbin.org/delay/3

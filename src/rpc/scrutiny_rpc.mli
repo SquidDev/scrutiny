@@ -76,7 +76,8 @@ val notify : t -> ('a, [ `Notify ]) Method.t -> 'a
 
 (** Create a log reporter which forwards messages over the network.
 
-    This only forwards basic log information (src, level, message) and does not include {!Logs.Tag.t
+    This only forwards basic log information (src, level, message) and does not include
+    {!Logs.Tag.t
     log tags} or other structured data. *)
 val log_forwarder : t -> Logs.reporter
 

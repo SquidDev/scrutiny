@@ -54,7 +54,7 @@ let pipe ~sw name =
           while true do
             Switch.check sw;
             let got = src#read_into buf in
-            let read = Cstruct.copy buf 0 got in
+            let read = Cstruct.to_string buf ~len:got in
             traceln "%s: written %S" name read;
             Queue.add { body = read; offset = 0 } queue;
             Eio.Condition.broadcast condition

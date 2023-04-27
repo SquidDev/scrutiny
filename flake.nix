@@ -3,10 +3,6 @@
     opam-repository.url = "github:ocaml/opam-repository";
     opam-repository.flake = false;
 
-    # Unlocks 5.0 on the main repository
-    opam-repository-beta.url = "github:ocaml/ocaml-beta-repository";
-    opam-repository-beta.flake = false;
-
     opam-nix.url = "github:tweag/opam-nix";
     opam-nix.inputs.nixpkgs.follows = "nixpkgs";
     opam-nix.inputs.opam-repository.follows = "opam-repository";
@@ -14,14 +10,10 @@
     utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = {
-    self, utils, opam-nix, nixpkgs,
-    opam-repository, opam-repository-beta,
-  }:
+  outputs = { self, utils, opam-nix, nixpkgs, opam-repository }:
     let
       package = "scrutiny";
       repos = [
-        opam-repository-beta
         opam-repository
       ];
       overlay = pkgs: _: let

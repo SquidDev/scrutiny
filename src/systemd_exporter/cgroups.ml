@@ -26,7 +26,7 @@ let get_path ~subsystem ~stat group t =
 let use ~fs ~subsystem ~stat cgroup t f =
   let path = get_path ~subsystem ~stat cgroup t in
   try Eio.Path.(fs / Fpath.to_string path) |> Eio.Path.load |> f
-  with Unix.Unix_error (Unix.ENOENT, _, _) ->
+  with Eio.Io (Eio.Fs.E (Eio.Fs.Not_found _), _) ->
     Log.warn (fun f -> f "Cannot find stat %s for cgroup %a" stat Fpath.pp cgroup);
     None
 

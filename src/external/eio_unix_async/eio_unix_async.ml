@@ -39,7 +39,7 @@ let worker () =
     fn ();
 
     let duration = Mtime_clock.count start in
-    if Mtime.Span.to_ms duration > 10.0 then
+    if Mtime.Span.to_float_ns duration > 10e6 then
       Log.warn (fun f -> f "%s took longer than expected: %a" name Mtime.Span.pp duration)
   done
 

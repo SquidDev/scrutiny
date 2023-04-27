@@ -31,7 +31,7 @@ module ProgressHelpers = struct
           finished := true
       | `rerender | `finish -> ());
 
-      let seconds = Mtime.Span.to_s !latest in
+      let seconds = Mtime.Span.to_float_ns !latest *. 1e-9 in
       Line_buffer.add_string buf
       @@
       if seconds > 60.0 then
@@ -203,7 +203,7 @@ let progress_tracker ~sw ~clock ~active_keys ~total =
       (fun key status ->
         let elapsed = Mtime_clock.count status.clock in
         (match status.line with
-        | None when Mtime.Span.to_s elapsed > 1.0 ->
+        | None when Mtime.Span.to_float_ns elapsed > 1e9 ->
             let line =
               Progress.Display.add_line ~above:1 progress_display
                 (ProgressHelpers.key_line key status.clock)

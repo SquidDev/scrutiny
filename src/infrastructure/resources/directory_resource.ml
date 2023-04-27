@@ -51,8 +51,8 @@ module Dir = struct
           match Eio.Path.mkdir ~perm:target.perms path' with
           (* TODO: mkdirs instead? What's the correct behaviour with perms? *)
           | () -> File_mod.apply ~current:None ~target path
-          | exception Unix.Unix_error (code, _, _) ->
-              Error (Format.sprintf "Failed to create directory (%s)" (Unix.error_message code))
+          | exception (Eio.Io _ as exn) ->
+              Error (Format.asprintf "Failed to create directory (%a)" Eio.Exn.pp exn)
         in
         Ok (Infra.NeedsChange { diff; apply })
 end

@@ -10,7 +10,7 @@ license: "BSD-3-Clause"
 homepage: "https://github.com/squiddev/scrutiny"
 bug-reports: "https://github.com/squiddev/scrutiny/issues"
 depends: [
-  "dune" {>= "3.3"}
+  "dune" {>= "3.7"}
   "ocaml" {>= "5.0"}
   "ocamlformat" {dev}
   "ocaml-lsp-server" {dev}
@@ -56,3 +56,12 @@ build: [
   ]
 ]
 dev-repo: "git+https://github.com/squiddev/scrutiny.git"
+pin-depends: [
+  # Progress, to allow using latest mtime.
+  ["progress.dev" "git+https://github.com/craigfe/progress#709e1e2b12f4f74dd2c8823dde274dcd0ac35142"]
+  ["terminal.dev" "git+https://github.com/craigfe/progress#709e1e2b12f4f74dd2c8823dde274dcd0ac35142"]
+  # co-http, to ensure we're on the latest eio version
+  ["cohttp.dev" "git+https://github.com/mirage/ocaml-cohttp#11c8f54c7b0db55e740b1eb93dadb69b0950cf7d"]
+  ["cohttp-eio.dev" "git+https://github.com/mirage/ocaml-cohttp#11c8f54c7b0db55e740b1eb93dadb69b0950cf7d"]
+  ["http.dev" "git+https://github.com/mirage/ocaml-cohttp#11c8f54c7b0db55e740b1eb93dadb69b0950cf7d"]
+]

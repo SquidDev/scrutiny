@@ -21,12 +21,12 @@ let watch_journal ~sw ~unit_name =
     if Journal.next journal then (
       let message = Journal.get_data_exn journal "MESSAGE" |> String.trim in
       (if this_unit unit_fields then
-       let log : ('a, unit) Logs.msgf = fun f -> f ~header:unit_name "%s" message in
-       match Journal.get_data journal "PRIORITY" with
-       | Some ("0" | "1" | "2" | "3") -> Log.err log
-       | Some "4" -> Log.warn log
-       | Some ("5" | "6") -> Log.info log
-       | Some ("7" | _) | None -> Log.debug log);
+         let log : ('a, unit) Logs.msgf = fun f -> f ~header:unit_name "%s" message in
+         match Journal.get_data journal "PRIORITY" with
+         | Some ("0" | "1" | "2" | "3") -> Log.err log
+         | Some "4" -> Log.warn log
+         | Some ("5" | "6") -> Log.info log
+         | Some ("7" | _) | None -> Log.debug log);
       read_journal ())
   in
   let rec watch_journal () =

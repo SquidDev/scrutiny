@@ -1,7 +1,7 @@
-(lang dune 3.3)
+(lang dune 3.7)
 (implicit_transitive_deps false)
 (generate_opam_files true)
-(using mdx 0.2)
+(using mdx 0.3)
 
 (name scrutiny)
 (version 0.1.0)

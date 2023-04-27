@@ -221,8 +221,8 @@ let ssh ~(env : Eio.Stdenv.t) ~sw ({ sudo_pw; host; tunnel_path } : Remote.t) =
 
 let run_tunnel ~env () : unit =
   (if Option.is_none (Sys.getenv_opt "XDG_RUNTIME_DIR") then
-   let id = Unix.getuid () in
-   if id <> 0 then Unix.putenv "XDG_RUNTIME_DIR" (Printf.sprintf "/run/user/%d" id));
+     let id = Unix.getuid () in
+     if id <> 0 then Unix.putenv "XDG_RUNTIME_DIR" (Printf.sprintf "/run/user/%d" id));
 
   Switch.run @@ fun sw ->
   let next_action = ref 0 in

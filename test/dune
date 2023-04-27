@@ -63,10 +63,10 @@
   eio.mock
   eio.unix
   logs
+  mdx
   scrutiny.diff
   scrutiny.rpc
   unix)
- (deps mdx_support.ml mdx_support.a)
  (preludes mdx_support.ml))
 
 (rule
