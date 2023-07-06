@@ -1,5 +1,7 @@
 (** A computation which either succeeds, fails or throws an exception. *)
 
+open Ppx_yojson_conv_lib.Yojson_conv.Primitives
+
 type 'a t =
   | Ok of 'a
   | Error of string

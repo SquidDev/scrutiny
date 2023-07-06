@@ -1,3 +1,4 @@
+open Ppx_yojson_conv_lib.Yojson_conv.Primitives
 module Infra = Scrutiny_infrastructure
 
 module DirState = struct

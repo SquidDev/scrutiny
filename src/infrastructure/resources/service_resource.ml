@@ -1,4 +1,5 @@
 open Eio.Std
+open Ppx_yojson_conv_lib.Yojson_conv.Primitives
 module Infra = Scrutiny_infrastructure
 module Journal = Scrutiny_systemd.Journal
 module Systemd = Scrutiny_systemd.Manager

@@ -1,3 +1,5 @@
+open Ppx_yojson_conv_lib.Yojson_conv.Primitives
+
 type exn += Rpc_exception of string | Remote_exn of string * string
 
 let () =

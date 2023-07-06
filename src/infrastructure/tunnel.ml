@@ -1,4 +1,5 @@
 open Eio.Std
+open Ppx_yojson_conv_lib.Yojson_conv.Primitives
 open Core
 module ITbl = Hashtbl.Make (CCInt)
 module STbl = Hashtbl.Make (CCString)
