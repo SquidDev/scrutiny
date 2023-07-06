@@ -55,7 +55,7 @@ type t = {
   builders : Builder_map.t;  (** Keys which have an explicit build rule defined. *)
   keys : State_map.t;  (** Keys which are currently being built or have a result. *)
   sw : Switch.t;  (** The switch where keys are run. *)
-  env : Eio.Stdenv.t;  (** The environment where keys are run. *)
+  env : Eio_unix.Stdenv.base;  (** The environment where keys are run. *)
   progress : progress;  (** Progress callbacks. *)
   dry_run : bool;
 }

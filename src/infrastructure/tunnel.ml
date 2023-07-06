@@ -202,7 +202,7 @@ let make_executor_factory ~env ~sw () : Core.user -> Executor.t Or_exn.t =
   in
   find
 
-let ssh ~(env : Eio.Stdenv.t) ~sw ({ sudo_pw; host; tunnel_path } : Remote.t) =
+let ssh ~(env : Eio_unix.Stdenv.base) ~sw ({ sudo_pw; host; tunnel_path } : Remote.t) =
   let setup, cmd =
     let ssh = Sys.getenv_opt "SCRUTINY_SSH" |> Option.value ~default:"ssh" in
     match sudo_pw with
@@ -259,7 +259,7 @@ let run_tunnel ~env () : unit =
         Scrutiny_rpc.Method.handle Signatures.apply_resource apply_resource;
       ]
       (Eio.Buf_read.of_flow ~max_size:(1024 * 1024) env#stdin)
-      env#stdout
+      (env#stdout :> Eio.Flow.sink)
   in
 
   (* Set up our forwarding log reporter. *)

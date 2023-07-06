@@ -33,6 +33,7 @@
  (libraries
   eio
   eio.core
+  eio.unix
   fmt
   fpath
   jingoo

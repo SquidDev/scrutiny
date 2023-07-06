@@ -45,7 +45,7 @@ let get_docker_image ~fs =
 
 (** Create a new container and pass the container id to the provided function. The container is
     automatically removed once the function exits. *)
-let with_container ~(env : Eio.Stdenv.t) fn : unit =
+let with_container ~(env : Eio_unix.Stdenv.base) fn : unit =
   Switch.run @@ fun sw ->
   let image = get_docker_image ~fs:env#fs () in
   let name = Printf.sprintf "scrutiny-systemd-%016Lx" (Random.bits64 ()) in

@@ -79,7 +79,8 @@ module type Resource = sig
 
       The [apply] function itself should have no side effects, as this is used when performing
       dry-runs and other sanity checks. *)
-  val apply : env:Eio.Stdenv.t -> Key.t -> Value.t -> EdgeOptions.t -> (change, string) result
+  val apply :
+    env:Eio_unix.Stdenv.base -> Key.t -> Value.t -> EdgeOptions.t -> (change, string) result
 end
 
 module Resource : sig
@@ -192,7 +193,10 @@ type run_result = {
 
 (** Apply a collection of rules. *)
 val apply :
-  env:Eio.Stdenv.t -> ?dry_run:bool -> ([ `Local ], unit) Rules.t -> (run_result, string) result
+  env:Eio_unix.Stdenv.base ->
+  ?dry_run:bool ->
+  ([ `Local ], unit) Rules.t ->
+  (run_result, string) result
 
 (** Parse command line arguments and apply a set of rules. *)
 val main : ([ `Local ], unit) Rules.t -> unit

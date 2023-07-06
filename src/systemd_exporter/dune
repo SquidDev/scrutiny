@@ -9,6 +9,7 @@
   logs
   eio
   eio.core
+  eio.unix
   eio_main
   cohttp
   cohttp-eio

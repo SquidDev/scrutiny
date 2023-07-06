@@ -20,7 +20,7 @@ type progress = {
 
 (** Apply a batch of rules. *)
 val apply :
-  env:Eio.Stdenv.t ->
+  env:Eio_unix.Stdenv.base ->
   ?progress:progress ->
   ?dry_run:bool ->
   Core.Rules.rules ->

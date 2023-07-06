@@ -52,7 +52,9 @@ module type Resource = sig
   module Value : BasicValue
 
   val pp : Key.t Fmt.t
-  val apply : env:Eio.Stdenv.t -> Key.t -> Value.t -> EdgeOptions.t -> (change, string) result
+
+  val apply :
+    env:Eio_unix.Stdenv.base -> Key.t -> Value.t -> EdgeOptions.t -> (change, string) result
 end
 
 module Resource = struct
