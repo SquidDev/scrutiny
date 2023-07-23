@@ -8,7 +8,6 @@
   eio.core
   eio_main
   eio.unix
-  eio_process
   eio_unix_async
   fmt
   fpath

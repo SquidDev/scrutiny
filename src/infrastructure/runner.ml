@@ -54,6 +54,7 @@ let default_progress = { key_start = (fun _ -> ()); key_done = (fun _ -> ()) }
 type t = {
   builders : Builder_map.t;  (** Keys which have an explicit build rule defined. *)
   keys : State_map.t;  (** Keys which are currently being built or have a result. *)
+  outer_sw : Switch.t;
   sw : Switch.t;  (** The switch where keys are run. *)
   env : Eio_unix.Stdenv.base;  (** The environment where keys are run. *)
   progress : progress;  (** Progress callbacks. *)
@@ -128,11 +129,11 @@ let build_var ~store var value =
       Error ()
   | Ok (value, _options, changed) -> Ok (changed, value)
 
-let build_machine ~store:{ env; sw; _ } (machine : Machine.t) =
+let build_machine ~store:{ env; outer_sw; sw; _ } (machine : Machine.t) =
   match machine with
   | Local -> Ok (false, Executors.local ~env)
   | Remote remote -> (
-    match Tunnel.ssh ~env ~sw remote with
+    match Tunnel.ssh ~env ~outer_sw ~sw remote with
     | Ok exec -> Ok (false, exec)
     | Error e ->
         Log.err (fun f -> f "Failed to open tunnel to %s: %s" remote.host e);
@@ -270,9 +271,11 @@ let apply ~env ?(progress = default_progress) ?(dry_run = false) (rules : Rules.
         |> CCSeq.to_rev_list
       in
 
+      (* See notes in tunnel.ml about the double-switch structure. *)
+      Switch.run @@ fun outer_sw ->
       Switch.run @@ fun sw ->
       let keys = State_map.create (Builder_map.length rules) in
-      let store = { keys; builders = rules; progress; sw; env; dry_run } in
+      let store = { keys; builders = rules; progress; outer_sw; sw; env; dry_run } in
       List.iter (start_rule ~store) tasks;
       await_rules ~store tasks |> ignore;
       let changed, failed =

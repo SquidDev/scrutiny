@@ -4,4 +4,8 @@
 val run_tunnel : env:Eio_unix.Stdenv.base -> unit -> unit
 
 val ssh :
-  env:Eio_unix.Stdenv.base -> sw:Eio.Switch.t -> Core.Remote.t -> (Core.Executor.t, string) result
+  env:Eio_unix.Stdenv.base ->
+  outer_sw:Eio.Switch.t ->
+  sw:Eio.Switch.t ->
+  Core.Remote.t ->
+  (Core.Executor.t, string) result

@@ -23,18 +23,18 @@ end
 let docker = Sys.getenv_opt "SCRUTINY_DOCKER" |> Option.value ~default:"podman"
 
 (** Build our shared docker image and return the image hash. *)
-let get_docker_image ~fs =
+let get_docker_image ~mgr ~fs =
   let build_image () =
     with_temp ~fs @@ fun file ->
-    run_command
-      [|
+    run_command ~mgr
+      [
         docker;
         "build";
         "--network=host";
         "-q";
         "--iidfile=" ^ snd file;
         "--file=support/Dockerfile";
-      |];
+      ];
     let id = Eio.Path.load file |> String.trim in
     Log.info (fun f -> f "Built systemd image as %S" id);
     if id = "" then failwith "Image ID is empty!";
@@ -47,11 +47,12 @@ let get_docker_image ~fs =
     automatically removed once the function exits. *)
 let with_container ~(env : Eio_unix.Stdenv.base) fn : unit =
   Switch.run @@ fun sw ->
-  let image = get_docker_image ~fs:env#fs () in
+  let mgr = Eio.Stdenv.process_mgr env in
+  let image = get_docker_image ~mgr ~fs:env#fs () in
   let name = Printf.sprintf "scrutiny-systemd-%016Lx" (Random.bits64 ()) in
   Log.info (fun f -> f "Starting systemd container %S using image %S" name image);
-  run_command
-    [|
+  run_command ~mgr
+    [
       docker;
       "run";
       "-dt";
@@ -61,17 +62,17 @@ let with_container ~(env : Eio_unix.Stdenv.base) fn : unit =
       "--name=" ^ name;
       "--rm";
       image;
-    |];
-  Fiber.fork ~sw (fun () -> run_command [| docker; "logs"; "-f"; name |]);
-  run_command
-    [|
+    ];
+  Fiber.fork ~sw (fun () -> run_command ~mgr [ docker; "logs"; "-f"; name ]);
+  run_command ~mgr
+    [
       docker; "cp"; "../src/infrastructure/bin/tunnel.exe"; name ^ ":/usr/bin/scrutiny-infra-tunnel";
-    |];
+    ];
 
   (* Sleep a bit to wait for systemd to come up. *)
   Eio.Time.sleep env#clock 1.0;
 
-  Fun.protect ~finally:(fun () -> run_command [| docker; "kill"; name |]) (fun () -> fn name)
+  Fun.protect ~finally:(fun () -> run_command ~mgr [ docker; "kill"; name ]) (fun () -> fn name)
 
 (** Create a new container and apply a set of rules targetting that container. *)
 let run_rules ~env ?(timeout = 10.0) ~name rules =

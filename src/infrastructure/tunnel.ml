@@ -160,19 +160,27 @@ let executor ~sw ~input ~output () : Executor.t =
   in
   { Executor.apply = check }
 
-let executor_of_cmd ~sw setup cmd =
+let executor_of_cmd ~mgr ~outer_sw ~sw setup cmd =
   Switch.check sw;
 
-  let _proc, channels = Eio_process.spawn_full ~sw cmd.(0) cmd in
-  Fiber.fork_daemon ~sw (fun () -> drain channels.stderr; `Stop_daemon);
+  (* We use two nested switches here. stdin is managed to the inner switch, which is closed first.
+     The outer switch is the one which runs the process, waiting for it to finish. *)
+  let stdin_r, stdin_w = Eio.Process.pipe ~sw mgr
+  and stdout_r, stdout_w = Eio.Process.pipe ~sw:outer_sw mgr
+  and stderr_r, stderr_w = Eio.Process.pipe ~sw:outer_sw mgr in
+  let proc =
+    Eio.Process.spawn ~sw:outer_sw mgr ~stdin:stdin_r ~stdout:stdout_w ~stderr:stderr_w cmd
+  in
+  Fiber.fork_daemon ~sw (fun () -> drain stderr_r; `Stop_daemon);
+  Fiber.fork ~sw:outer_sw (fun () -> Eio.Process.await_exn proc);
 
-  let input = Eio.Buf_read.of_flow ~max_size:(1024 * 1024) channels.stdout in
-  let output = channels.stdin in
+  let input = Eio.Buf_read.of_flow ~max_size:(1024 * 1024) stdout_r in
+  let output = (stdin_w :> Eio.Flow.sink) in
   match Eio.Buf_write.with_flow output @@ fun output -> setup ~input ~output with
   | Ok () -> Ok (executor ~sw ~input ~output ())
   | Error e -> Error e
 
-let make_executor_factory ~env ~sw () : Core.user -> Executor.t Or_exn.t =
+let make_executor_factory ~env ~outer_sw ~sw () : Core.user -> Executor.t Or_exn.t =
   let current_user = Unix.getuid () in
   let find_user = make_user_lookup () in
   let user_tunnels = ITbl.create 4 in
@@ -180,8 +188,8 @@ let make_executor_factory ~env ~sw () : Core.user -> Executor.t Or_exn.t =
   let create uid =
     let user = Eio_unix_async.getpwuid uid in
     Log.info (fun f -> f "Opening tunnel for %S (%d)" user.Unix.pw_name uid);
-    executor_of_cmd ~sw (wait_for_init ~clock:env#clock)
-      [| "sudo"; "--user"; user.Unix.pw_name; Sys.executable_name |]
+    executor_of_cmd ~mgr:(Eio.Stdenv.process_mgr env) ~outer_sw ~sw (wait_for_init ~clock:env#clock)
+      [ "sudo"; "--user"; user.Unix.pw_name; Sys.executable_name ]
   in
   let memo user =
     match ITbl.find_opt user_tunnels user with
@@ -203,11 +211,11 @@ let make_executor_factory ~env ~sw () : Core.user -> Executor.t Or_exn.t =
   in
   find
 
-let ssh ~(env : Eio_unix.Stdenv.base) ~sw ({ sudo_pw; host; tunnel_path } : Remote.t) =
+let ssh ~(env : Eio_unix.Stdenv.base) ~outer_sw ~sw ({ sudo_pw; host; tunnel_path } : Remote.t) =
   let setup, cmd =
     let ssh = Sys.getenv_opt "SCRUTINY_SSH" |> Option.value ~default:"ssh" in
     match sudo_pw with
-    | None -> (wait_for_init ~clock:env#clock, [| ssh; host; tunnel_path |])
+    | None -> (wait_for_init ~clock:env#clock, [ ssh; host; tunnel_path ])
     | Some password ->
         let prompt ~input ~output =
           (* TODO: Wait for prompt rather than sleeping. *)
@@ -216,19 +224,20 @@ let ssh ~(env : Eio_unix.Stdenv.base) ~sw ({ sudo_pw; host; tunnel_path } : Remo
           Eio.Buf_write.char output '\n';
           wait_for_init ~clock:env#clock ~input ~output
         in
-        (prompt, [| ssh; host; "sudo"; "-S"; "-p"; "sudo[scrutiny-infra-tunnel]: "; tunnel_path |])
+        (prompt, [ ssh; host; "sudo"; "-S"; "-p"; "sudo[scrutiny-infra-tunnel]: "; tunnel_path ])
   in
-  executor_of_cmd ~sw setup cmd
+  executor_of_cmd ~mgr:(Eio.Stdenv.process_mgr env) ~outer_sw ~sw setup cmd
 
 let run_tunnel ~env () : unit =
   (if Option.is_none (Sys.getenv_opt "XDG_RUNTIME_DIR") then
      let id = Unix.getuid () in
      if id <> 0 then Unix.putenv "XDG_RUNTIME_DIR" (Printf.sprintf "/run/user/%d" id));
 
+  Switch.run @@ fun outer_sw ->
   Switch.run @@ fun sw ->
   let next_action = ref 0 in
   let pending_actions = ITbl.create 32 in
-  let run_as_user = make_executor_factory ~env ~sw () in
+  let run_as_user = make_executor_factory ~env ~outer_sw ~sw () in
 
   let check_resource (AppliedResource.Boxed { resource; key; value; options; user }) : check_result
       =

@@ -7,7 +7,6 @@
   eio_main
   eio.core
   eio.unix
-  eio_process
   fmt
   fpath
   logs
@@ -24,7 +23,7 @@
  (action
   (setenv
    SCRUTINY_SSH
-   %{dep:support/podman-exec.sh}
+   ./%{dep:support/podman-exec.sh}
    (run %{test}))))
 
 (rule
