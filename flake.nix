@@ -41,6 +41,7 @@
             mkdir -p $out/bin
             cp "${scrutiny}/bin/${exe}" "$out/bin/${exe}"
           '';
+          disallowedRequisites = [scrutiny];
         };
       in {
         inherit scrutiny;
