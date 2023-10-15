@@ -5,6 +5,7 @@
   eio
   eio_main
   eio.core
+  eio.unix
   fmt.tty
   logs
   logs.fmt

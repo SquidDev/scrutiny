@@ -167,10 +167,11 @@ let progress_tracker ~sw ~clock ~active_keys ~total =
 
   (* Unconditionally set the line. *)
   let set_line line message =
+    let module String = Stdlib.String in
     let message =
-      match CCString.index_opt message '\n' with
+      match String.index_opt message '\n' with
       | None -> message
-      | Some p -> CCString.sub message 0 p
+      | Some p -> String.sub message 0 p
     in
     Progress.Reporter.report line message
   in

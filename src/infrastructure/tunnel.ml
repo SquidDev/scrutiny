@@ -1,8 +1,8 @@
 open Eio.Std
 open Ppx_yojson_conv_lib.Yojson_conv.Primitives
 open Core
-module ITbl = Hashtbl.Make (CCInt)
-module STbl = Hashtbl.Make (CCString)
+module ITbl = Hashtbl.Make (Int)
+module STbl = Hashtbl.Make (String)
 module Log = (val Logs.src_log (Logs.Src.create __MODULE__))
 
 type user =

@@ -15,7 +15,7 @@
   (synopsis "Bits and bobs for wrangling my server")
   (description "A home grown infrastructure management and monitoring toolkit, because I'm silly.")
   (depends
-    (ocaml (>= 5.0))
+    (ocaml (>= 5.1))
 
     ;; Build-time
     (ocamlformat :dev)

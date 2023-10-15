@@ -1,6 +1,6 @@
 open Eio.Std
 module Stream = Eio.Stream
-module ITbl = Hashtbl.Make (CCInt)
+module ITbl = Hashtbl.Make (Int)
 module STbl = CCHashtbl.Make (String)
 module Log = (val Logs.src_log (Logs.Src.create __MODULE__))
 

@@ -4,6 +4,6 @@
 # It might be possible to use a custom NixOS container, but Fedora appears to
 # be good enough.
 
-FROM fedora:36
+FROM fedora:38
 RUN dnf install -qy systemd nginx && dnf clean all
 CMD [ "/lib/systemd/systemd" ]

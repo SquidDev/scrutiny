@@ -11,7 +11,7 @@ homepage: "https://github.com/squiddev/scrutiny"
 bug-reports: "https://github.com/squiddev/scrutiny/issues"
 depends: [
   "dune" {>= "3.7"}
-  "ocaml" {>= "5.0"}
+  "ocaml" {>= "5.1"}
   "ocamlformat" {dev}
   "ocaml-lsp-server" {dev}
   "base-threads"

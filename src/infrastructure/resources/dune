@@ -2,7 +2,6 @@
  (name scrutiny_infrastructure_resources_internal)
  (public_name scrutiny.infrastructure.resources_internal)
  (libraries
-  containers
   digestif
   eio
   eio.core

@@ -20,7 +20,7 @@ let () =
   exit @@ Eio_main.run
   @@ fun env ->
   Switch.run @@ fun sw ->
-  let client = Client.create ~sw ~clock:env#clock ~net:env#net source in
+  let client = Client.create ~sw ~clock:(Eio.Stdenv.clock env) ~net:(Eio.Stdenv.net env) source in
   let ok, result =
     match Zone.find ~client site with
     | Ok zone -> DnsRecord.Spec.sync ~dryrun:true ~client ~zone records

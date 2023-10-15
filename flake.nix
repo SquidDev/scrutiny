@@ -18,12 +18,14 @@
       ];
       overlay = pkgs: _: let
         opam = opam-nix.lib.${pkgs.system};
+
         project = opam.buildOpamProject {
           inherit pkgs repos;
 
           resolveArgs = { dev = false; };
           overlays = [opam.defaultOverlay];
         } package ./. {};
+
         scrutiny = project.${package}.overrideAttrs(oa: {
           buildInputs = oa.buildInputs ++ [pkgs.systemdMinimal];
           nativeBuildInputs = oa.nativeBuildInputs ++ [pkgs.upx];
