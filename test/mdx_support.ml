@@ -12,57 +12,62 @@ let () =
          | _ -> ());
   Logs.format_reporter () |> Logs.set_reporter
 
-let pipe ~sw name =
-  (* TODO: Allow closing. *)
-  let open struct
-    type t = {
-      body : string;
-      mutable offset : int;
-    }
-  end in
-  let condition = Eio.Condition.create () in
-  let queue = Queue.create () in
+module Pipe = struct
+  type contents = {
+    body : string;
+    mutable offset : int;
+  }
 
-  let rec read_into sink =
-    Switch.check sw;
-    match Queue.peek_opt queue with
-    | None ->
-        Eio.Condition.await_no_mutex condition;
-        read_into sink
-    | Some ({ body; offset } as buf) ->
-        let body_len = String.length body in
-        let len = min (body_len - offset) (Cstruct.length sink) in
+  type queue = {
+    name : string;
+    sw : Switch.t;
+    queue : contents Queue.t;
+    condition : Eio.Condition.t;
+  }
 
-        traceln "%s: read %S" name (String.sub body offset len);
-        Cstruct.blit_from_string body offset sink 0 len;
-        if len + offset >= body_len then Queue.take queue |> ignore else buf.offset <- offset + len;
-        len
-  in
-  let source =
-    object
-      inherit Eio.Flow.source
-      method read_into = read_into
-    end
-  in
-  let sink =
-    object
-      inherit Eio.Flow.sink
+  module Two_way = struct
+    type t = queue
 
-      method copy src =
-        try
-          let buf = Cstruct.create 4096 in
-          while true do
-            Switch.check sw;
-            let got = src#read_into buf in
-            let read = Cstruct.to_string buf ~len:got in
-            traceln "%s: written %S" name read;
-            Queue.add { body = read; offset = 0 } queue;
-            Eio.Condition.broadcast condition
-          done
-        with End_of_file -> ()
-    end
-  in
-  (source, sink)
+    let rec single_read ({ sw; name; queue; condition } as t) sink =
+      Switch.check sw;
+      match Queue.peek_opt queue with
+      | None ->
+          Eio.Condition.await_no_mutex condition;
+          single_read t sink
+      | Some ({ body; offset } as buf) ->
+          let body_len = String.length body in
+          let len = min (body_len - offset) (Cstruct.length sink) in
+
+          traceln "%s: read %S" name (String.sub body offset len);
+          Cstruct.blit_from_string body offset sink 0 len;
+          if len + offset >= body_len then Queue.take queue |> ignore
+          else buf.offset <- offset + len;
+          len
+
+    let read_methods = []
+
+    let single_write { sw = _; name; queue; condition } bufs =
+      List.fold_left
+        (fun acc x ->
+          let read = Cstruct.to_string x in
+          Queue.add { body = read; offset = 0 } queue;
+          traceln "%s: written %S" name read;
+          Eio.Condition.broadcast condition;
+          acc + Cstruct.length x)
+        0 bufs
+
+    let copy t ~src = Eio.Flow.Pi.simple_copy ~single_write t ~src
+  end
+
+  let source = Eio.Flow.Pi.source (module Two_way)
+  let sink = Eio.Flow.Pi.sink (module Two_way)
+
+  let create ~sw name : _ Eio.Flow.source * _ Eio.Flow.sink =
+    let queue = { sw; name; queue = Queue.create (); condition = Eio.Condition.create () } in
+    (T (queue, source), T (queue, sink))
+end
+
+let pipe = Pipe.create
 
 let with_buffered_pipe name fn =
   Switch.run @@ fun sw ->

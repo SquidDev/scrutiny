@@ -11,9 +11,9 @@ let handle_prometheus snapshot =
   in
   let body = Format.asprintf "%a" Scrutiny_prometheus.TextFormat_0_0_4.output snapshot in
 
-  (response, Body.Fixed body)
+  (response, Body.of_string body)
 
-let app ~fs ~config (req, _reader, _client_addr) =
+let app ~fs ~config (_conn : Server.conn) req (_reader : Body.t) =
   match (Http.Request.resource req, Http.Request.meth req) with
   | "/metrics", `GET -> (
       let metrics =
@@ -25,9 +25,9 @@ let app ~fs ~config (req, _reader, _client_addr) =
       in
       match metrics with
       | Some () -> Prometheus.CollectorRegistry.(collect default) |> handle_prometheus
-      | None -> Server.internal_server_error_response)
-  | "/metrics", _ -> (Http.Response.make ~status:`Method_not_allowed (), Body.Empty)
-  | _ -> Server.not_found_response
+      | None -> Server.respond_string ~status:`Internal_server_error ~body:"Server error" ())
+  | "/metrics", _ -> Server.respond_string ~status:`Method_not_allowed ~body:"Method not allowed" ()
+  | _ -> Server.respond_string ~status:`Internal_server_error ~body:"Not found" ()
 
 let main ~busses ~cgroup ~addr ~port =
   Eio_main.run @@ fun env ->
@@ -38,7 +38,13 @@ let main ~busses ~cgroup ~addr ~port =
     }
   in
   Log.info (fun f -> f "Listening on %s:%d" addr port);
-  Server.run ~port env (app ~fs:env#fs ~config)
+
+  Eio.Switch.run @@ fun sw ->
+  let socket =
+    Eio.Net.listen env#net ~sw ~backlog:128 ~reuse_addr:true
+      (`Tcp (Eio.Net.Ipaddr.V4.loopback, port))
+  and server = Server.make ~callback:(app ~fs:env#fs ~config) () in
+  Server.run socket server ~on_error:raise
 
 let () =
   let term =

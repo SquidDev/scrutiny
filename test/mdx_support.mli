@@ -6,10 +6,11 @@ type 'arg scoped = { run : 'a. ('arg -> 'a) -> 'a }
 
 (** Produce a pair of flows which feed into each other. This is equivalent to {!Unix.pipe}, but
     without the dependency on Unix. *)
-val pipe : sw:Switch.t -> string -> Eio.Flow.source * Eio.Flow.sink
+val pipe :
+  sw:Switch.t -> string -> Eio.Flow.source_ty Eio.Flow.source * Eio.Flow.sink_ty Eio.Flow.sink
 
 (** Create a new {!pipe} and wrap them as buffered readers/writers. *)
-val with_buffered_pipe : string -> (Eio.Buf_read.t * Eio.Flow.sink -> 'a) -> 'a
+val with_buffered_pipe : string -> (Eio.Buf_read.t * Eio.Flow.sink_ty Eio.Flow.sink -> 'a) -> 'a
 
 (** Create a switch, run a function, and then immediately kill the switch. *)
 val with_sw : (Switch.t -> unit) -> unit

@@ -10,7 +10,7 @@ type source =
 module Client : sig
   type t
 
-  val create : sw:Eio.Switch.t -> clock:Eio.Time.clock -> net:Eio.Net.t -> source -> t
+  val create : sw:Eio.Switch.t -> clock:_ Eio.Time.clock -> net:_ Eio.Net.t -> source -> t
 end
 
 (** Represents a unique ID of some resource. This signature is included in the definitions of actual

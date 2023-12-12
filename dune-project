@@ -29,7 +29,7 @@
     (cohttp-eio (>= 6.0))
     (containers (>= 3.6))
     digestif
-    (eio (>= 0.11))
+    (eio (>= 0.13))
     eio_main
     fmt
     fpath

@@ -66,7 +66,7 @@ end
 type t
 
 (** Create a new RPC instance from an input and output channel. *)
-val create : sw:Eio.Switch.t -> Method.handle list -> Eio.Buf_read.t -> Eio.Flow.sink -> t
+val create : sw:Eio.Switch.t -> Method.handle list -> Eio.Buf_read.t -> _ Eio.Flow.sink -> t
 
 (** Make a remote call and wait for the result. *)
 val call : t -> ('a, [ `Call ]) Method.t -> 'a

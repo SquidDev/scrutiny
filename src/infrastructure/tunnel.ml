@@ -175,7 +175,7 @@ let executor_of_cmd ~mgr ~outer_sw ~sw setup cmd =
   Fiber.fork ~sw:outer_sw (fun () -> Eio.Process.await_exn proc);
 
   let input = Eio.Buf_read.of_flow ~max_size:(1024 * 1024) stdout_r in
-  let output = (stdin_w :> Eio.Flow.sink) in
+  let output = stdin_w in
   match Eio.Buf_write.with_flow output @@ fun output -> setup ~input ~output with
   | Ok () -> Ok (executor ~sw ~input ~output ())
   | Error e -> Error e
@@ -269,7 +269,7 @@ let run_tunnel ~env () : unit =
         Scrutiny_rpc.Method.handle Signatures.apply_resource apply_resource;
       ]
       (Eio.Buf_read.of_flow ~max_size:(1024 * 1024) env#stdin)
-      (env#stdout :> Eio.Flow.sink)
+      env#stdout
   in
 
   (* Set up our forwarding log reporter. *)
