@@ -28,7 +28,6 @@
 
         scrutiny = project.${package}.overrideAttrs(oa: {
           buildInputs = oa.buildInputs ++ [pkgs.systemdMinimal];
-          nativeBuildInputs = oa.nativeBuildInputs ++ [pkgs.upx];
 
           removeOcamlReferences = true;
           propagateInputs = false;

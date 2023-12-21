@@ -115,6 +115,11 @@ module Service = struct
   let get_desired_unit_state target =
     if target.enabled then ("enabled", Systemd.Unit.enable) else ("disabled", Systemd.Unit.disable)
 
+  let unit_state_matches ~current ~target =
+    match current with
+    | "generated" -> true
+    | _ -> current = target
+
   (** Monitor a unit, ensuring it remains running for some period. *)
   let monitor_unit ~clock name unit_file target =
     if target.monitor <= 0 then Ok ()
@@ -150,8 +155,10 @@ module Service = struct
           (Systemd.Unit.get_active_state unit_file, Systemd.Unit.get_unit_file_state unit_file)
         in
 
-        if current_state = target_state && current_unit_state = target_unit_state then
-          Ok Infra.Correct
+        if
+          current_state = target_state
+          && unit_state_matches ~current:current_unit_state ~target:target_unit_state
+        then Ok Infra.Correct
         else
           let diff =
             let open Scrutiny_diff in
@@ -177,7 +184,8 @@ module Service = struct
             match apply_state with
             | Error e -> Error (Printf.sprintf "Failed to %s service (%s)" target_state e)
             | Ok () ->
-                if current_unit_state <> target_unit_state then target_unit_state_apply unit_file;
+                if not (unit_state_matches ~current:current_unit_state ~target:target_unit_state)
+                then target_unit_state_apply unit_file;
                 if target.running && current_state <> target_state then
                   monitor_unit ~clock:env#clock name unit_file target
                 else Ok ()

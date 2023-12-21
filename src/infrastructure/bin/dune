@@ -1,5 +1,6 @@
 (executable
  (name tunnel)
+ (public_name scrutiny-infra-tunnel)
  (modules tunnel)
  (libraries
   cmdliner
@@ -10,19 +11,3 @@
   scrutiny_infrastructure
   scrutiny_infrastructure_resources_internal
   unix))
-
-(rule
- (target tunnel.strip.exe)
- (action
-  (run strip -o %{target} %{dep:tunnel.exe})))
-
-(rule
- (target tunnel.min.exe)
- (action
-  (run upx -o %{target} %{dep:tunnel.strip.exe})))
-
-(install
- (section bin)
- (package scrutiny)
- (files
-  (tunnel.min.exe as scrutiny-infra-tunnel)))
