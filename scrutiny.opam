@@ -57,7 +57,8 @@ build: [
 ]
 dev-repo: "git+https://github.com/squiddev/scrutiny.git"
 pin-depends: [
-  ["cohttp.dev" "git+https://github.com/mirage/ocaml-cohttp#v6.0.0_beta1"]
-  ["cohttp-eio.dev" "git+https://github.com/mirage/ocaml-cohttp#v6.0.0_beta1"]
-  ["http.dev" "git+https://github.com/mirage/ocaml-cohttp#v6.0.0_beta1"]
+  # v6.0.0_beta1
+  ["cohttp.dev" "git+https://github.com/mirage/ocaml-cohttp#e5a66f1c1e7c2e5051723e09260222994dff40cf"]
+  ["cohttp-eio.dev" "git+https://github.com/mirage/ocaml-cohttp#e5a66f1c1e7c2e5051723e09260222994dff40cf"]
+  ["http.dev" "git+https://github.com/mirage/ocaml-cohttp#e5a66f1c1e7c2e5051723e09260222994dff40cf"]
 ]
