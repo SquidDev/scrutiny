@@ -24,7 +24,9 @@
 
           resolveArgs = { dev = false; };
           overlays = [opam.defaultOverlay];
-        } package ./. {};
+        } package ./. {
+          ocaml-base-compiler = "*";
+        };
 
         scrutiny = project.${package}.overrideAttrs(oa: {
           buildInputs = oa.buildInputs ++ [pkgs.systemdMinimal];
