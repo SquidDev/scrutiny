@@ -14,8 +14,8 @@ let () =
     units
     |> List.filter (fun (x : M.unit_state) -> CCString.suffix ~suf:".service" x.id)
     |> Eio.Fiber.List.map (fun (x : M.unit_state) ->
-           let cgroup = M.Service.of_unit x.unit |> M.Service.get_control_group in
-           (x, cgroup))
+        let cgroup = M.Service.of_unit x.unit |> M.Service.get_control_group in
+        (x, cgroup))
   in
   units
   |> List.iter @@ fun ((x : M.unit_state), cgroup) ->

@@ -155,10 +155,10 @@ module Sync = struct
       (* In parallel to the above, perform in-sequence updates. *)
       SMap.to_seq overlap |> List.of_seq
       |> Fiber.List.map (fun (_, (spec, record)) ->
-             if Option.fold ~none:true ~some:(fun ttl -> ttl = record.Dns_record.ttl) spec.ttl then (
-               Log.debug (fun f -> f "Nothing to do for record %a" Dns_record.pp record);
-               (true, [ (`Same, Format.asprintf "%a" pp spec) ]))
-             else Updates.update ~dryrun ~client ~zone spec record)
+          if Option.fold ~none:true ~some:(fun ttl -> ttl = record.Dns_record.ttl) spec.ttl then (
+            Log.debug (fun f -> f "Nothing to do for record %a" Dns_record.pp record);
+            (true, [ (`Same, Format.asprintf "%a" pp spec) ]))
+          else Updates.update ~dryrun ~client ~zone spec record)
       |> accumulate
     in
     (ok && ok', diff @ overlaps)
@@ -200,7 +200,7 @@ module Sync = struct
               spec records
             |> KMap.to_seq |> List.of_seq
             |> Fiber.List.map (fun (_, (spec, records)) ->
-                   sync_domain ~dryrun ~client:client_ ~zone spec records)
+                sync_domain ~dryrun ~client:client_ ~zone spec records)
           in
           let ok = List.for_all fst xs in
           let diff = List.map snd xs |> List.flatten |> Scrutiny_diff.of_lines in

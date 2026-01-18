@@ -224,8 +224,7 @@ let create ~sw methods input output =
         send (Json_rpc.error ?id ~data:(`String bt) OCaml_exception e)
   in
   (* Parse arguments for an incoming call, then dispatch it. *)
-  let rec parse_call :
-      type s u.
+  let rec parse_call : type s u.
       ?id:int -> (s, u) Method.signature -> Yojson.Safe.t list -> s apply -> Json_rpc.message option
       =
    fun ?id mth args fn ->

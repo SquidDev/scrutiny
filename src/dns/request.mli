@@ -1,6 +1,6 @@
 type client
 
-val create_client : sw:Eio.Switch.t -> clock:_ Eio.Time.clock -> net:_ Eio.Net.t -> client
+val create_client : sw:Eio.Switch.t -> env:Eio_unix.Stdenv.base -> client
 
 type request_body =
   | GET

@@ -3,12 +3,12 @@
  (public_name scrutiny.dns)
  (synopsis "Manage DNS records using various cloud-provider's APIs")
  (libraries
-  curl
-  curl_eio
   eio
   eio.core
+  eio.unix
   fmt
   logs
+  piaf
   ppx_yojson_conv_lib
   result
   scrutiny.diff

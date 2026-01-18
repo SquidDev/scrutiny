@@ -241,7 +241,8 @@ module Concrete_key = struct
     | Var _ as k -> BKey k
     | Machine _ as k -> BKey k
 
-  (** A key which just exposes the result. Convenient for exposing the extra data as an existential. *)
+  (** A key which just exposes the result. Convenient for exposing the extra data as an existential.
+  *)
   type 'result with_res = RKey : ('result * 'data) t -> 'result with_res [@@unboxed]
 
   let create (type result kind) context : (result, kind) key -> result with_res = function

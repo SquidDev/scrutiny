@@ -27,14 +27,14 @@ module DnsResource = struct
 
   let apply ~env ~zone ~source ~spec () =
     Eio.Switch.run @@ fun sw ->
-    let client = Dns.Client.create ~sw ~clock:env#clock ~net:env#net source in
+    let client = Dns.Client.create ~sw ~env source in
 
     let res, _diff = Dns.DnsRecord.Spec.sync ~dryrun:false ~client ~zone spec in
     res
 
   let apply ~env zone ({ source; spec } : State.t) () : (Infra.change, string) result =
     Eio.Switch.run @@ fun sw ->
-    let client = Dns.Client.create ~sw ~clock:env#clock ~net:env#net source in
+    let client = Dns.Client.create ~sw ~env source in
 
     match Dns.Zone.find ~client zone with
     | Error e -> Error ("Cannot find zone: " ^ e)

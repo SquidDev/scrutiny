@@ -194,12 +194,12 @@ let rec start_rule ~store (Concrete_key.BKey key) =
           State_map.set store.keys key (Finished (Error ())))
 
 and build_rule :
-      'r 'opts.
-      store:t ->
-      ('r * 'opts) Concrete_key.t ->
-      ('r * 'opts) Key_builder.t ->
-      (bool * 'r, unit) result Promise.u ->
-      unit =
+    'r 'opts.
+    store:t ->
+    ('r * 'opts) Concrete_key.t ->
+    ('r * 'opts) Key_builder.t ->
+    (bool * 'r, unit) result Promise.u ->
+    unit =
  fun ~store key builder resolve ->
   let dependencies = all_dependencies key builder in
   List.iter (start_rule ~store) dependencies;
@@ -265,9 +265,9 @@ let apply ~env ?(progress = default_progress) ?(dry_run = false) (rules : Rules.
       let tasks =
         Builder_map.to_seq rules
         |> Seq.filter_map (fun (Builder_map.Packed (key, _)) ->
-               match key with
-               | Concrete_key.Resource _ -> Some (Concrete_key.BKey key)
-               | Concrete_key.Var _ | Concrete_key.Machine _ -> None)
+            match key with
+            | Concrete_key.Resource _ -> Some (Concrete_key.BKey key)
+            | Concrete_key.Var _ | Concrete_key.Machine _ -> None)
         |> CCSeq.to_rev_list
       in
 

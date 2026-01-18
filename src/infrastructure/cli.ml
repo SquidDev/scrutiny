@@ -231,10 +231,10 @@ let setup_logs ?(extra_level = Logs.Warning) level =
   Logs.set_level ~all:true (Some level);
   Logs.Src.list ()
   |> List.iter (fun src ->
-         match Logs.Src.name src with
-         | "piaf.client" | "piaf.http" | "piaf.openssl" -> Logs.Src.set_level src (Some extra_level)
-         | "eio_linux" -> Logs.Src.set_level src None
-         | _ -> ())
+      match Logs.Src.name src with
+      | "piaf.client" | "piaf.http" | "piaf.openssl" -> Logs.Src.set_level src (Some extra_level)
+      | "eio_linux" -> Logs.Src.set_level src None
+      | _ -> ())
 
 let main rules_def =
   Printexc.record_backtrace true;

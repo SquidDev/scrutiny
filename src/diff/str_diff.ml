@@ -39,15 +39,15 @@ let rec diff_ olds news out =
 
       news
       |> Slice.iteri (fun new_index value ->
-             let this_overlap = Array.make (Slice.length olds) 0 in
-             Hashtbl.find_all old_index_map value
-             |> List.iter (fun old_index ->
-                    let this = if old_index = 0 then 1 else overlap.(old_index - 1) + 1 in
-                    this_overlap.(old_index) <- this;
-                    if this > !sub_length then (
-                      sub_length := this;
-                      sub_range := (old_index - this + 1, new_index - this + 1)));
-             Array.blit this_overlap 0 overlap 0 (Array.length this_overlap));
+          let this_overlap = Array.make (Slice.length olds) 0 in
+          Hashtbl.find_all old_index_map value
+          |> List.iter (fun old_index ->
+              let this = if old_index = 0 then 1 else overlap.(old_index - 1) + 1 in
+              this_overlap.(old_index) <- this;
+              if this > !sub_length then (
+                sub_length := this;
+                sub_range := (old_index - this + 1, new_index - this + 1)));
+          Array.blit this_overlap 0 overlap 0 (Array.length this_overlap));
 
       if !sub_length = 0 then add `Remove olds @@ add `Add news out
       else

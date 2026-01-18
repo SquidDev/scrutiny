@@ -5,11 +5,6 @@ type exn += Finished
 let () =
   Printexc.record_backtrace true;
   Logs.set_level ~all:true (Some Info);
-  Logs.Src.list ()
-  |> List.iter (fun src ->
-         match Logs.Src.name src with
-         | "Curl_eio" -> Logs.Src.set_level src (Some Debug)
-         | _ -> ());
   Logs.format_reporter () |> Logs.set_reporter
 
 module Pipe = struct

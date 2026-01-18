@@ -34,7 +34,7 @@
     jingoo
     logs
     lwt-dllist
-    curl
+    piaf
     ppx_yojson_conv
     ppx_yojson_conv_lib
     (progress (>= 0.2.0))

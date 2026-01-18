@@ -9,8 +9,8 @@ type source =
 module Client = struct
   type t = client
 
-  let create ~sw ~clock ~net source =
-    let client = Request.create_client ~sw ~clock ~net in
+  let create ~sw ~env source =
+    let client = Request.create_client ~sw ~env in
     match source with
     | Porkbun { api_key; secret } ->
         let client = Porkbun.create ~client ~auth:{ api_key; secret } in
