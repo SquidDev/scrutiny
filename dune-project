@@ -25,8 +25,6 @@
     base-threads
     base-unix
     cmdliner
-    (cohttp (>= 6.0))
-    (cohttp-eio (>= 6.0))
     (containers (>= 3.6))
     digestif
     (eio (>= 0.13))
@@ -36,11 +34,10 @@
     jingoo
     logs
     lwt-dllist
-    ocurl
+    curl
     ppx_yojson_conv
     ppx_yojson_conv_lib
     (progress (>= 0.2.0))
-    (prometheus (= 1.1))
     re
     result
     uri

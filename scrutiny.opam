@@ -17,8 +17,6 @@ depends: [
   "base-threads"
   "base-unix"
   "cmdliner"
-  "cohttp" {>= "6.0"}
-  "cohttp-eio" {>= "6.0"}
   "containers" {>= "3.6"}
   "digestif"
   "eio" {>= "0.13"}
@@ -28,11 +26,10 @@ depends: [
   "jingoo"
   "logs"
   "lwt-dllist"
-  "ocurl"
+  "curl"
   "ppx_yojson_conv"
   "ppx_yojson_conv_lib"
   "progress" {>= "0.2.0"}
-  "prometheus" {= "1.1"}
   "re"
   "result"
   "uri"
@@ -56,9 +53,4 @@ build: [
   ]
 ]
 dev-repo: "git+https://github.com/squiddev/scrutiny.git"
-pin-depends: [
-  # v6.0.0_beta1
-  ["cohttp.dev" "git+https://github.com/mirage/ocaml-cohttp#e5a66f1c1e7c2e5051723e09260222994dff40cf"]
-  ["cohttp-eio.dev" "git+https://github.com/mirage/ocaml-cohttp#e5a66f1c1e7c2e5051723e09260222994dff40cf"]
-  ["http.dev" "git+https://github.com/mirage/ocaml-cohttp#e5a66f1c1e7c2e5051723e09260222994dff40cf"]
-]
+

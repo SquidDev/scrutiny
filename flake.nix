@@ -17,16 +17,14 @@
         opam-repository
       ];
       overlay = pkgs: _: let
-        opam = opam-nix.lib.${pkgs.system};
+        opam = opam-nix.lib.${pkgs.stdenv.hostPlatform.system};
 
         project = opam.buildOpamProject {
           inherit pkgs repos;
 
           resolveArgs = { dev = false; };
           overlays = [opam.defaultOverlay];
-        } package ./. {
-          ocaml-base-compiler = "*";
-        };
+        } package ./. {};
 
         scrutiny = project.${package}.overrideAttrs(oa: {
           buildInputs = oa.buildInputs ++ [pkgs.systemdMinimal];
@@ -49,7 +47,6 @@
       in {
         inherit scrutiny;
         scrutiny-infra-tunnel = mkSingleExe { name = "scrutiny-infra-tunnel"; };
-        scrutiny-systemd-exporter = mkSingleExe { name = "scrutiny-systemd-exporter"; exe = "systemd_exporter"; };
       };
     in {
       inherit overlay;
@@ -57,6 +54,5 @@
       let pkgs = import nixpkgs { inherit system; overlays = [overlay]; }; in {
         packages.default = pkgs.scrutiny;
         packages.scrutiny-infra-tunnel = pkgs.scrutiny-infra-tunnel;
-        packages.scrutiny-systemd-exporter = pkgs.scrutiny-systemd-exporter;
       });
 }

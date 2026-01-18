@@ -11,6 +11,8 @@
 
 .#*
 
-# Esy lock folder. Probably shouldn't ignore this, but it's also bit large and
+# Dune lock folder. Probably shouldn't ignore this, but it's also bit large and
 # I'd rather not include it.
-/esy.lock/
+/dune.lock/
+/dev-tools.locks/
+
